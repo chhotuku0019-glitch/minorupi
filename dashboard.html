@@ -1,0 +1,2221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MinorUPI — Admin Dashboard</title>
+  <meta name="description" content="Private MinorUPI payment gateway administration panel.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* ==========================================================================
+       CSS THEME VARIABLES (:root) — Light & Dark Mode
+       ========================================================================== */
+    :root {
+      --bg-page: #f6f8fc;
+      --bg-surface: #ffffff;
+      --bg-surface-elevated: #ffffff;
+      --bg-card-inner: #f8fafc;
+      --bg-drawer: #ffffff;
+      --border-color: #e2e8f0;
+      --border-subtle: rgba(0, 0, 0, 0.04);
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --text-dim: #94a3b8;
+      --primary: #1d4ed8;
+      --primary-hover: #1e40af;
+      --primary-glow: rgba(29, 78, 216, 0.2);
+      --success: #10b981;
+      --success-bg: rgba(16, 185, 129, 0.1);
+      --warning: #f59e0b;
+      --warning-bg: rgba(245, 158, 11, 0.1);
+      --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.1);
+      --radius-sm: 10px;
+      --radius-md: 16px;
+      --radius-lg: 22px;
+      --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+      --shadow-card: 0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 2px 6px -1px rgba(15, 23, 42, 0.02);
+      --shadow-drawer: 10px 0 30px rgba(15, 23, 42, 0.15);
+    }
+
+    /* Dark theme support */
+    html.dark {
+      --bg-page: #090d16;
+      --bg-surface: #111827;
+      --bg-surface-elevated: #161f33;
+      --bg-card-inner: #0f172a;
+      --bg-drawer: #111827;
+      --border-color: #1e293b;
+      --border-subtle: rgba(255, 255, 255, 0.04);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-glow: rgba(37, 99, 235, 0.25);
+      --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+      --shadow-drawer: 10px 0 30px rgba(0, 0, 0, 0.5);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-page);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    /* ==========================================================================
+       HAMBURGER DRAWER & OVERLAY (Requirement 2)
+       ========================================================================== */
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(4px);
+      z-index: 90;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .drawer-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .nav-drawer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 280px;
+      max-width: 85vw;
+      background: var(--bg-drawer);
+      border-right: 1px solid var(--border-color);
+      box-shadow: var(--shadow-drawer);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(-100%);
+      transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      user-select: none;
+    }
+    .nav-drawer.open {
+      transform: translateX(0);
+    }
+
+    .drawer-header {
+      padding: 20px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .drawer-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      background: #1d4ed8;
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 1.15rem;
+      box-shadow: 0 4px 10px rgba(29, 78, 216, 0.3);
+    }
+    .brand-name {
+      font-size: 19px;
+      font-weight: 800;
+      color: var(--text-main);
+      line-height: 1;
+    }
+    .brand-name span {
+      color: #1d4ed8;
+    }
+    .brand-subtitle {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+    .drawer-close-btn {
+      width: 36px;
+      height: 36px;
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+    .drawer-close-btn:hover {
+      background: var(--border-subtle);
+      color: var(--text-main);
+    }
+
+    .drawer-nav {
+      padding: 16px 14px;
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      color: var(--text-muted);
+      border-radius: var(--radius-sm);
+      font-size: 0.93rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-decoration: none !important;
+    }
+    .nav-link svg {
+      width: 19px;
+      height: 19px;
+      stroke-width: 2.2;
+      flex-shrink: 0;
+    }
+    .nav-link:hover {
+      color: var(--text-main);
+      background: var(--bg-card-inner);
+    }
+    .nav-link.active {
+      color: #ffffff;
+      background: #1d4ed8;
+      box-shadow: 0 4px 14px rgba(29, 78, 216, 0.3);
+    }
+    .nav-link.active svg {
+      color: #ffffff;
+    }
+
+    .drawer-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .user-profile-badge {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .user-avatar {
+      width: 34px;
+      height: 34px;
+      background: #e2e8f0;
+      color: #1e293b;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+    html.dark .user-avatar {
+      background: #1e293b;
+      color: #f8fafc;
+    }
+    .user-info-text {
+      flex: 1;
+      overflow: hidden;
+    }
+    .user-name {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .user-email {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ==========================================================================
+       TOP BAR (Requirement 2: Hamburger on left, title in center, status on right)
+       ========================================================================== */
+    .topbar {
+      height: 66px;
+      border-bottom: 1px solid var(--border-color);
+      background: var(--bg-surface);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .hamburger-btn {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 5px;
+      background: transparent;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      padding: 0;
+    }
+    .hamburger-btn:hover {
+      background: var(--bg-card-inner);
+    }
+    .hamburger-bar {
+      width: 20px;
+      height: 2px;
+      background-color: var(--text-main);
+      border-radius: 2px;
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+    }
+    .hamburger-btn.is-open .hamburger-bar:nth-child(1) {
+      transform: translateY(7px) rotate(45deg);
+    }
+    .hamburger-btn.is-open .hamburger-bar:nth-child(2) {
+      opacity: 0;
+      transform: scaleX(0);
+    }
+    .hamburger-btn.is-open .hamburger-bar:nth-child(3) {
+      transform: translateY(-7px) rotate(-45deg);
+    }
+
+    .topbar-title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .topbar-brand {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--text-main);
+      display: flex;
+      align-items: baseline;
+    }
+    .topbar-brand span {
+      color: #1d4ed8;
+    }
+    .topbar-divider {
+      color: var(--border-color);
+      font-size: 1.2rem;
+    }
+    .topbar-page-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* Connection status dot */
+    .connection-status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 14px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-decoration: none !important;
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+    .status-connected {
+      background: var(--success-bg);
+      color: var(--success);
+      border-color: rgba(16, 185, 129, 0.25);
+    }
+    .status-disconnected {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border-color: rgba(239, 68, 68, 0.25);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .status-connected .status-dot {
+      animation: pulseGreen 2s infinite;
+    }
+    @keyframes pulseGreen {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(0.8); opacity: 0.5; }
+    }
+
+    .theme-toggle-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+    .theme-toggle-btn:hover {
+      color: var(--text-main);
+      background: var(--bg-card-inner);
+    }
+
+    /* ==========================================================================
+       MAIN CONTENT CONTAINER
+       ========================================================================== */
+    .main-viewport {
+      flex: 1;
+      padding: 28px 24px 60px;
+      max-width: 1350px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* Tab views */
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Typography & Headers */
+    .page-header {
+      margin-bottom: 24px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+    .page-header h1 {
+      font-size: 1.65rem;
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.3px;
+    }
+    .page-header p {
+      color: var(--text-muted);
+      font-size: 0.92rem;
+      margin-top: 4px;
+    }
+
+    /* ==========================================================================
+       CARDS & STATS GRID (Matching reference 63ff1bbc61b8ab34c56c49ebb8c442cd)
+       ========================================================================== */
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      box-shadow: var(--shadow-card);
+      margin-bottom: 24px;
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      box-shadow: var(--shadow-card);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .stat-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+    .stat-subtext {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+    /* Button styles */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      min-height: 42px;
+      padding: 10px 18px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-decoration: none !important;
+      font-family: inherit;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: #ffffff;
+      box-shadow: 0 4px 14px var(--primary-glow);
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+    .btn-secondary {
+      background: var(--bg-card-inner);
+      color: var(--text-main);
+      border-color: var(--border-color);
+    }
+    .btn-secondary:hover {
+      background: var(--border-color);
+    }
+    .btn-danger {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.2);
+    }
+    .btn-sm {
+      min-height: 34px;
+      padding: 6px 12px;
+      font-size: 0.82rem;
+    }
+
+    /* Form styling */
+    .form-group {
+      margin-bottom: 18px;
+      text-align: left;
+    }
+    .form-group label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .form-control {
+      width: 100%;
+      min-height: 44px;
+      padding: 11px 14px;
+      background: var(--bg-card-inner);
+      border: 1.5px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-main);
+      font-size: 16px; /* Prevents auto-zoom on mobile */
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .form-control:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-glow);
+    }
+
+    /* Tables & Responsive Design */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+      background: var(--bg-surface);
+    }
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      text-align: left;
+    }
+    .data-table th {
+      background: var(--bg-card-inner);
+      padding: 12px 16px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-color);
+    }
+    .data-table td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-main);
+    }
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+    .data-table tr:hover td {
+      background: var(--bg-card-inner);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-paid { background: var(--success-bg); color: var(--success); }
+    .badge-pending { background: rgba(29, 78, 216, 0.1); color: #1d4ed8; }
+    .badge-expired { background: rgba(148, 163, 184, 0.12); color: var(--text-muted); }
+    .badge-cancelled { background: var(--warning-bg); color: var(--warning); }
+    .badge-failed { background: var(--danger-bg); color: var(--danger); }
+
+    /* Empty states (Clean SVG graphic + friendly message) */
+    .empty-state-box {
+      padding: 48px 24px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .empty-state-icon {
+      width: 68px;
+      height: 68px;
+      margin-bottom: 16px;
+      color: var(--text-dim);
+    }
+    .empty-state-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 6px;
+    }
+    .empty-state-text {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      max-width: 420px;
+      margin-bottom: 18px;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-backdrop.active {
+      display: flex;
+    }
+    .modal-box {
+      width: 100%;
+      max-width: 480px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.25);
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .modal-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--text-main);
+    }
+
+    /* Toast system */
+    #toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto;
+      min-width: 280px;
+      max-width: 380px;
+      padding: 13px 18px;
+      border-radius: 12px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #ffffff;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: toastIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .toast-success { background: #059669; }
+    .toast-error { background: #dc2626; }
+    .toast-info { background: #1d4ed8; }
+    @keyframes toastIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .topbar { padding: 0 16px; }
+      .main-viewport { padding: 20px 14px 60px; }
+      .stats-grid { grid-template-columns: 1fr; }
+      .card { padding: 18px; }
+      .topbar-brand span.hide-mobile { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Drawer Dark Backdrop Overlay -->
+  <div id="drawer-overlay" class="drawer-overlay" onclick="toggleDrawer(false)"></div>
+
+  <!-- Slide-In Drawer from the Left (Requirement 2) -->
+  <aside id="nav-drawer" class="nav-drawer">
+    <div class="drawer-header">
+      <div class="drawer-brand">
+        <div class="brand-icon">M</div>
+        <div>
+          <div class="brand-name">Minor<span>UPI</span>™</div>
+          <div class="brand-subtitle">Private Gateway</div>
+        </div>
+      </div>
+      <button class="drawer-close-btn" onclick="toggleDrawer(false)" aria-label="Close Navigation">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <nav class="drawer-nav">
+      <!-- 1. Dashboard -->
+      <a class="nav-link active" data-tab="dashboard" onclick="switchTab('dashboard')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <rect x="3" y="3" width="7" height="7"></rect>
+          <rect x="14" y="3" width="7" height="7"></rect>
+          <rect x="14" y="14" width="7" height="7"></rect>
+          <rect x="3" y="14" width="7" height="7"></rect>
+        </svg>
+        <span>Dashboard</span>
+      </a>
+
+      <!-- 2. Connect -->
+      <a class="nav-link" data-tab="connect" onclick="switchTab('connect')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+        </svg>
+        <span>Connect FamApp</span>
+      </a>
+
+      <!-- 3. Payment Links -->
+      <a class="nav-link" data-tab="links" onclick="switchTab('links')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+          <line x1="2" y1="10" x2="22" y2="10"></line>
+        </svg>
+        <span>Payment Links</span>
+      </a>
+
+      <!-- 4. Transactions -->
+      <a class="nav-link" data-tab="transactions" onclick="switchTab('transactions')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <polyline points="17 1 21 5 17 9"></polyline>
+          <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+          <polyline points="7 23 3 19 7 15"></polyline>
+          <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+        </svg>
+        <span>Transactions</span>
+      </a>
+
+      <!-- 5. API -->
+      <a class="nav-link" data-tab="api" onclick="switchTab('api')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <polyline points="16 18 22 12 16 6"></polyline>
+          <polyline points="8 6 2 12 8 18"></polyline>
+        </svg>
+        <span>API & Webhooks</span>
+      </a>
+
+      <!-- 6. Settings -->
+      <a class="nav-link" data-tab="settings" onclick="switchTab('settings')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        <span>Settings</span>
+      </a>
+    </nav>
+
+    <!-- Drawer Footer with Admin Profile and Logout -->
+    <div class="drawer-footer">
+      <div class="user-profile-badge">
+        <div id="drawer-user-avatar" class="user-avatar">A</div>
+        <div class="user-info-text">
+          <div id="drawer-user-name" class="user-name">Administrator</div>
+          <div id="drawer-user-email" class="user-email">admin</div>
+        </div>
+      </div>
+      <button class="btn btn-danger btn-sm" style="width: 100%;" onclick="confirmLogout()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+          <polyline points="16 17 21 12 16 7"></polyline>
+          <line x1="21" y1="12" x2="9" y2="12"></line>
+        </svg>
+        Sign Out
+      </button>
+    </div>
+  </aside>
+
+  <!-- ==========================================================================
+       TOP BAR
+       ========================================================================== -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <!-- Animated Hamburger Button (Top-Left) -->
+      <button id="btn-hamburger" class="hamburger-btn" onclick="toggleDrawer()" aria-label="Toggle Navigation Menu">
+        <span class="hamburger-bar"></span>
+        <span class="hamburger-bar"></span>
+        <span class="hamburger-bar"></span>
+      </button>
+
+      <!-- Brand and Section Name -->
+      <div class="topbar-title-group">
+        <div class="topbar-brand">Minor<span>UPI</span>™</div>
+        <span class="topbar-divider">/</span>
+        <div id="topbar-page-name" class="topbar-page-name">Dashboard</div>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <!-- Connection Status Dot -->
+      <a id="topbar-conn-badge" class="connection-status-pill status-disconnected" onclick="switchTab('connect')" title="Click to configure FamApp email connection">
+        <span class="status-dot"></span>
+        <span id="topbar-conn-text">Disconnected</span>
+      </a>
+
+      <!-- Quick Action: Create Link -->
+      <button class="btn btn-primary btn-sm" onclick="switchTab('links')">
+        <span>+</span> Link
+      </button>
+
+      <!-- Theme Toggle -->
+      <button class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+        <svg id="theme-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ==========================================================================
+       MAIN VIEWPORT TABS
+       ========================================================================== -->
+  <main class="main-viewport">
+
+    <!-- 1. TAB: DASHBOARD -->
+    <section id="tab-dashboard" class="tab-content active">
+      <div class="page-header">
+        <div>
+          <h1>Overview</h1>
+          <p>Real-time telemetry and settlement summary.</p>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button class="btn btn-secondary btn-sm" onclick="loadDashboard()">↻ Refresh</button>
+          <a href="/docs" target="_blank" class="btn btn-secondary btn-sm">API Docs ↗</a>
+        </div>
+      </div>
+
+      <!-- Stats Grid -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-label">Total Volume</span>
+          <div class="stat-value">₹<span id="stat-total-received">0.00</span></div>
+          <span class="stat-subtext"><span id="stat-paid-count">0</span> successful payments</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Today's Collections</span>
+          <div class="stat-value">₹<span id="stat-today-amount">0.00</span></div>
+          <span class="stat-subtext"><span id="stat-today-count">0</span> transactions today</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Pending Verifications</span>
+          <div class="stat-value"><span id="stat-pending-count">0</span></div>
+          <span class="stat-subtext">Awaiting customer payment</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Order Lifecycle</span>
+          <div class="stat-value"><span id="stat-total-orders">0</span></div>
+          <span class="stat-subtext">
+            <span id="stat-expired-count">0</span> exp · <span id="stat-cancelled-count">0</span> can · <span id="stat-failed-count">0</span> fail
+          </span>
+        </div>
+      </div>
+
+      <!-- 30-Day Activity Chart -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Daily Payment Volume (30 Days)</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Direct UPI Settlement</div>
+        </div>
+        <div id="chart-empty-container" class="empty-state-box" style="display: none; padding: 30px;">
+          <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <line x1="12" y1="20" x2="12" y2="10"></line>
+            <line x1="18" y1="20" x2="18" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="16"></line>
+          </svg>
+          <div class="empty-state-title">No Transaction Activity Yet</div>
+          <p class="empty-state-text">Once customers complete payments through your payment links or API, daily volume trends will render here.</p>
+        </div>
+        <div style="height: 260px; position: relative;">
+          <canvas id="paymentsChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Recent Transactions -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Recent Transactions</div>
+          <button class="btn btn-secondary btn-sm" onclick="switchTab('transactions')">View All</button>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>UTR / Ref</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody id="recent-transactions-tbody">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+          <div id="recent-empty-state" class="empty-state-box" style="display: none;">
+            <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <div class="empty-state-title">No Payments Yet</div>
+            <p class="empty-state-text">Your gateway is ready. Connect your FamApp account and create your first payment link to start receiving payments.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. TAB: CONNECT (FamApp & Gmail IMAP) -->
+    <section id="tab-connect" class="tab-content">
+      <div class="page-header">
+        <div>
+          <h1>Connect FamApp & Gmail</h1>
+          <p>Configure automated email notification parsing for instant credit verification.</p>
+        </div>
+      </div>
+
+      <div class="card" style="max-width: 680px;">
+        <div style="background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 20px; font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
+          <strong style="color: var(--text-main);">How automated email verification works:</strong>
+          <br>FamApp sends credit notification emails from <code style="font-family: var(--font-mono); color: #1d4ed8;">@famapp.in</code> when money is received. MinorUPI securely polls your Gmail inbox over SSL IMAP every 6 seconds to extract the exact amount and UTR number, auto-fulfilling the corresponding order.
+        </div>
+
+        <form id="connect-form" autocomplete="off">
+          <div class="form-group">
+            <label for="conn-upi-id">Your FamApp UPI ID</label>
+            <input type="text" id="conn-upi-id" class="form-control" placeholder="username@fam" required>
+            <span style="font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; display: block;">This UPI ID is embedded into customer QR codes and payment URIs.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="conn-gmail">Gmail Address (Receiving FamApp Emails)</label>
+            <input type="email" id="conn-gmail" class="form-control" placeholder="you@gmail.com" required>
+          </div>
+
+          <div class="form-group">
+            <label for="conn-app-password">Google App Password (16 Characters)</label>
+            <input type="password" id="conn-app-password" class="form-control" placeholder="16-character Google App Password (e.g. abcd efgh ijkl mnop)" required minlength="16">
+            <span style="font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; display: block;">Generate this from your Google Account &gt; Security &gt; 2-Step Verification &gt; App Passwords. Stored encrypted with AES-256 Fernet.</span>
+          </div>
+
+          <div style="display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap;">
+            <button type="submit" id="btn-save-conn" class="btn btn-primary">
+              Verify & Save Connection
+            </button>
+            <button type="button" id="btn-disconnect-conn" class="btn btn-danger" style="display: none;" onclick="disconnectFamApp()">
+              Disconnect
+            </button>
+          </div>
+        </form>
+
+        <div id="conn-status-card" style="margin-top: 24px; padding: 16px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); display: none;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Worker Status</div>
+              <div id="conn-last-checked" style="font-size: 0.85rem; color: var(--text-main); font-weight: 600; margin-top: 2px;">Last checked: Never</div>
+            </div>
+            <span id="conn-status-badge" class="badge">Checking</span>
+          </div>
+          <div id="conn-last-error" style="font-size: 0.8rem; color: #ef4444; margin-top: 8px; display: none;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. TAB: PAYMENT LINKS -->
+    <section id="tab-links" class="tab-content">
+      <div class="page-header">
+        <div>
+          <h1>Payment Links</h1>
+          <p>Generate shareable UPI checkout links with dynamic paise verification.</p>
+        </div>
+        <button class="btn btn-primary" onclick="openCreateLinkModal()">+ Create Payment Link</button>
+      </div>
+
+      <div class="card">
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Base Amount</th>
+                <th>Payable (Paise Offset)</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="links-table-tbody">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+          <div id="links-empty-state" class="empty-state-box" style="display: none;">
+            <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+              <line x1="2" y1="10" x2="22" y2="10"></line>
+            </svg>
+            <div class="empty-state-title">No Payment Links Yet</div>
+            <p class="empty-state-text">Create your first payment link to share with customers via WhatsApp, Telegram, or email.</p>
+            <button class="btn btn-primary btn-sm" onclick="openCreateLinkModal()">+ Create Link</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. TAB: TRANSACTIONS -->
+    <section id="tab-transactions" class="tab-content">
+      <div class="page-header">
+        <div>
+          <h1>All Transactions</h1>
+          <p>Audit trail of all orders, settlements, and verification logs.</p>
+        </div>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <select id="filter-status" class="form-control" style="width: auto; min-width: 130px; min-height: 38px; padding: 6px 12px;" onchange="loadTransactions()">
+            <option value="">All Statuses</option>
+            <option value="paid">Paid</option>
+            <option value="pending">Pending</option>
+            <option value="expired">Expired</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="failed">Failed</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="exportTransactionsCSV()">Export CSV</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Source</th>
+                <th>Payable</th>
+                <th>Status</th>
+                <th>UTR</th>
+                <th>Created</th>
+                <th>Paid At</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="transactions-table-tbody">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+          <div id="transactions-empty-state" class="empty-state-box" style="display: none;">
+            <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M16 16s-1.5-2-4-2-4 2-4 2"></path>
+              <line x1="9" y1="9" x2="9.01" y2="9"></line>
+              <line x1="15" y1="9" x2="15.01" y2="9"></line>
+            </svg>
+            <div class="empty-state-title">No Transactions Found</div>
+            <p class="empty-state-text">No transactions matching your criteria. Once customer payments are received, they will appear here.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Unmatched Payments Box -->
+      <div class="card" style="margin-top: 28px;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Unmatched Payments Queue</div>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Payments received in FamApp that did not match any active pending order.</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadUnmatched()">↻ Refresh</button>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Amount</th>
+                <th>Sender</th>
+                <th>UTR / Ref</th>
+                <th>Received At</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody id="unmatched-table-tbody">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+          <div id="unmatched-empty-state" class="empty-state-box" style="display: none;">
+            <svg class="empty-state-icon" style="color: #10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+              <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+            <div class="empty-state-title" style="color: #10b981;">Clean Ledger: No Unmatched Credits</div>
+            <p class="empty-state-text">Every received FamApp payment was matched directly to its order.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. TAB: API & WEBHOOKS -->
+    <section id="tab-api" class="tab-content">
+      <div class="page-header">
+        <div>
+          <h1>API Keys & Webhooks</h1>
+          <p>Integrate MinorUPI directly into your website, SaaS, or WooCommerce store.</p>
+        </div>
+        <button class="btn btn-primary" onclick="openCreateApiKeyModal()">+ Generate API Key</button>
+      </div>
+
+      <!-- API Keys Table -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Active API Keys</div>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Key Prefix</th>
+                <th>Created</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="api-keys-tbody">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+          <div id="keys-empty-state" class="empty-state-box" style="display: none;">
+            <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M21 2l-2 2m-1-1l-3 3m5 5l-2 2m-1-1l-3 3m-4-10a6 6 0 1 1-8.48 8.48A6 6 0 0 1 13 4z"></path>
+            </svg>
+            <div class="empty-state-title">No API Keys Generated</div>
+            <p class="empty-state-text">Generate your first API key to connect your application backend with MinorUPI.</p>
+            <button class="btn btn-primary btn-sm" onclick="openCreateApiKeyModal()">+ Generate Key</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Webhook Secret Card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Webhook Signing Secret</div>
+          <button class="btn btn-danger btn-sm" onclick="confirmRegenerateWebhookSecret()">Regenerate Secret</button>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Used to verify the cryptographic HMAC-SHA256 signature in the <code style="font-family: var(--font-mono); color: #1d4ed8;">X-Signature</code> header on payment callbacks.</p>
+        <div style="display: flex; gap: 10px; max-width: 540px;">
+          <input type="text" id="webhook-secret-display" class="form-control font-mono" readonly value="Loading...">
+          <button class="btn btn-secondary" onclick="copyWebhookSecret()">Copy</button>
+        </div>
+      </div>
+
+      <!-- Webhook Logs Table -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Recent Webhook Deliveries</div>
+          <button class="btn btn-secondary btn-sm" onclick="loadWebhookLogs()">↻ Refresh</button>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Target URL</th>
+                <th>Attempt</th>
+                <th>Response</th>
+                <th>Status</th>
+                <th>Sent At</th>
+              </tr>
+            </thead>
+            <tbody id="webhook-logs-tbody">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+          <div id="webhooks-empty-state" class="empty-state-box" style="display: none;">
+            <div class="empty-state-title">No Webhooks Logged</div>
+            <p class="empty-state-text">Webhook delivery logs and HTTP status codes will show here once orders complete.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. TAB: SETTINGS -->
+    <section id="tab-settings" class="tab-content">
+      <div class="page-header">
+        <div>
+          <h1>Gateway Settings</h1>
+          <p>Update administrator credentials and profile.</p>
+        </div>
+      </div>
+
+      <div class="card" style="max-width: 580px;">
+        <form id="settings-profile-form">
+          <div class="form-group">
+            <label for="settings-name">Merchant / Admin Name</label>
+            <input type="text" id="settings-name" class="form-control" placeholder="Your Full Name" required>
+            <span style="font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; display: block;">This name appears on the customer UPI checkout card as Merchant Name.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="settings-email">Admin Email</label>
+            <input type="email" id="settings-email" class="form-control" placeholder="admin@example.com" required>
+          </div>
+
+          <hr style="border: none; border-top: 1px solid var(--border-color); margin: 24px 0;">
+
+          <div style="font-size: 0.95rem; font-weight: 700; color: var(--text-main); margin-bottom: 12px;">Change Password</div>
+
+          <div class="form-group">
+            <label for="settings-new-password">New Password (Leave blank to keep unchanged)</label>
+            <input type="password" id="settings-new-password" class="form-control" placeholder="••••••••" minlength="8" autocomplete="new-password">
+          </div>
+
+          <div class="form-group">
+            <label for="settings-confirm-password">Confirm New Password</label>
+            <input type="password" id="settings-confirm-password" class="form-control" placeholder="••••••••" minlength="8" autocomplete="new-password">
+          </div>
+
+          <button type="submit" id="btn-save-settings" class="btn btn-primary" style="margin-top: 10px;">
+            Save Profile Changes
+          </button>
+        </form>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==========================================================================
+       MODAL 1: CREATE PAYMENT LINK
+       ========================================================================== -->
+  <div id="modal-create-link" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">Create Payment Link</h3>
+        <button class="drawer-close-btn" onclick="closeModal('modal-create-link')">✕</button>
+      </div>
+      <form id="form-create-link">
+        <div class="form-group">
+          <label for="link-amount">Amount (INR)</label>
+          <input type="number" step="0.01" min="1" id="link-amount" class="form-control" placeholder="50.00" required>
+        </div>
+        <div class="form-group">
+          <label for="link-note">Note / Description (Optional)</label>
+          <input type="text" id="link-note" class="form-control" placeholder="e.g. Hosting subscription, Invoice #102">
+        </div>
+        <div class="form-group">
+          <label for="link-redirect-url">Customer Redirect URL (Optional)</label>
+          <input type="url" id="link-redirect-url" class="form-control" placeholder="https://yourwebsite.com/success">
+        </div>
+        <div style="display: flex; gap: 12px; margin-top: 20px;">
+          <button type="submit" class="btn btn-primary" style="flex: 1;">Generate Link</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-create-link')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       MODAL 2: GENERATE API KEY
+       ========================================================================== -->
+  <div id="modal-create-key" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">Generate API Key</h3>
+        <button class="drawer-close-btn" onclick="closeModal('modal-create-key')">✕</button>
+      </div>
+      <form id="form-create-key">
+        <div class="form-group">
+          <label for="key-name">Key Name</label>
+          <input type="text" id="key-name" class="form-control" placeholder="e.g. Production Backend, WooCommerce" required>
+        </div>
+        <div style="display: flex; gap: 12px; margin-top: 20px;">
+          <button type="submit" class="btn btn-primary" style="flex: 1;">Generate</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-create-key')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       MODAL 3: SHOW NEW API KEY (ONCE)
+       ========================================================================== -->
+  <div id="modal-show-key" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title" style="color: #10b981;">API Key Generated</h3>
+        <button class="drawer-close-btn" onclick="closeModal('modal-show-key')">✕</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
+        Make sure to copy your API key now. For your security, this key will not be shown again.
+      </p>
+      <div class="form-group">
+        <textarea id="new-key-display" class="form-control font-mono" rows="3" readonly style="font-size: 13px; resize: none;"></textarea>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <button class="btn btn-primary" style="flex: 1;" onclick="copyNewKey()">Copy Key</button>
+        <button class="btn btn-secondary" onclick="closeModal('modal-show-key')">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       MODAL 4: CUSTOM CONFIRMATION MODAL (No window.confirm)
+       ========================================================================== -->
+  <div id="modal-confirm" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 id="modal-confirm-title" class="modal-title">Are you sure?</h3>
+        <button class="drawer-close-btn" onclick="closeConfirmModal(false)">✕</button>
+      </div>
+      <p id="modal-confirm-message" style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 22px; line-height: 1.5;"></p>
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <button class="btn btn-secondary" onclick="closeConfirmModal(false)">Cancel</button>
+        <button id="modal-confirm-btn" class="btn btn-danger" onclick="closeConfirmModal(true)">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       DASHBOARD LOGIC JAVASCRIPT
+       ========================================================================== -->
+  <script>
+    // State variables
+    let currentAdmin = null;
+    let paymentsChartInstance = null;
+    let pendingConfirmResolve = null;
+
+    // Toast Utility
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.innerText = message;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => toast.remove(), 250);
+      }, 3500);
+    }
+
+    // Custom Confirm Modal
+    function showConfirmModal(title, message, confirmText = 'Confirm', isDanger = true) {
+      return new Promise((resolve) => {
+        document.getElementById('modal-confirm-title').innerText = title;
+        document.getElementById('modal-confirm-message').innerText = message;
+        const confirmBtn = document.getElementById('modal-confirm-btn');
+        confirmBtn.innerText = confirmText;
+        confirmBtn.className = isDanger ? 'btn btn-danger' : 'btn btn-primary';
+        pendingConfirmResolve = resolve;
+        document.getElementById('modal-confirm').classList.add('active');
+      });
+    }
+
+    function closeConfirmModal(result) {
+      document.getElementById('modal-confirm').classList.remove('active');
+      if (pendingConfirmResolve) {
+        pendingConfirmResolve(result);
+        pendingConfirmResolve = null;
+      }
+    }
+
+    // Modal Helpers
+    function openModal(id) {
+      document.getElementById(id).classList.add('active');
+    }
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('active');
+    }
+
+    // Drawer Navigation Controls (Requirement 2)
+    function toggleDrawer(force) {
+      const drawer = document.getElementById('nav-drawer');
+      const overlay = document.getElementById('drawer-overlay');
+      const hamburger = document.getElementById('btn-hamburger');
+      const isOpen = typeof force === 'boolean' ? force : !drawer.classList.contains('open');
+
+      if (isOpen) {
+        drawer.classList.add('open');
+        overlay.classList.add('active');
+        hamburger.classList.add('is-open');
+      } else {
+        drawer.classList.remove('open');
+        overlay.classList.remove('active');
+        hamburger.classList.remove('is-open');
+      }
+    }
+
+    // Keyboard support: ESC closes drawer or modals
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        toggleDrawer(false);
+        document.querySelectorAll('.modal-backdrop').forEach(el => el.classList.remove('active'));
+      }
+    });
+
+    // Theme Toggle
+    function toggleTheme() {
+      const isDark = document.documentElement.classList.toggle('dark');
+      localStorage.setItem('mupi_theme', isDark ? 'dark' : 'light');
+      if (paymentsChartInstance) {
+        renderChartTheme(paymentsChartInstance);
+      }
+    }
+
+    function initTheme() {
+      const saved = localStorage.getItem('mupi_theme');
+      if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+
+    // Tab Switching
+    const tabTitles = {
+      'dashboard': 'Dashboard',
+      'connect': 'Connect FamApp',
+      'links': 'Payment Links',
+      'transactions': 'Transactions',
+      'api': 'API & Webhooks',
+      'settings': 'Settings'
+    };
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
+
+      const targetTab = document.getElementById(`tab-${tabId}`);
+      if (targetTab) targetTab.classList.add('active');
+
+      const activeLink = document.querySelector(`.nav-link[data-tab="${tabId}"]`);
+      if (activeLink) activeLink.classList.add('active');
+
+      document.getElementById('topbar-page-name').innerText = tabTitles[tabId] || 'Dashboard';
+      toggleDrawer(false); // Close drawer after selection
+
+      // Load specific tab data
+      if (tabId === 'dashboard') loadDashboard();
+      else if (tabId === 'connect') loadConnection();
+      else if (tabId === 'links') loadPaymentLinks();
+      else if (tabId === 'transactions') { loadTransactions(); loadUnmatched(); }
+      else if (tabId === 'api') { loadApiKeys(); loadWebhookSecret(); loadWebhookLogs(); }
+      else if (tabId === 'settings') loadSettingsProfile();
+    }
+
+    // 1. Dashboard Data Loader
+    async function loadDashboard() {
+      try {
+        const res = await fetch('/api/admin/stats');
+        const data = await res.json();
+        if (!data.success) {
+          if (res.status === 401) window.location.href = '/login';
+          return;
+        }
+
+        const s = data.stats;
+        document.getElementById('stat-total-received').innerText = Number(s.total_received || 0).toFixed(2);
+        document.getElementById('stat-paid-count').innerText = s.paid || 0;
+        document.getElementById('stat-today-amount').innerText = Number(s.today_amount || 0).toFixed(2);
+        document.getElementById('stat-today-count').innerText = s.today_count || 0;
+        document.getElementById('stat-pending-count').innerText = s.pending || 0;
+        document.getElementById('stat-total-orders').innerText = s.total_payments || 0;
+        document.getElementById('stat-expired-count').innerText = s.expired || 0;
+        document.getElementById('stat-cancelled-count').innerText = s.cancelled || 0;
+        document.getElementById('stat-failed-count').innerText = s.failed || 0;
+
+        // Render Chart.js
+        renderChart(data.time_series || []);
+
+        // Render Recent Transactions
+        renderRecentTransactions(data.recent_transactions || []);
+      } catch (err) {
+        console.error('Failed to load dashboard:', err);
+      }
+    }
+
+    function renderChart(timeSeries) {
+      const ctx = document.getElementById('paymentsChart');
+      if (!ctx) return;
+
+      const labels = timeSeries.map(item => item.date.slice(5)); // MM-DD
+      const amounts = timeSeries.map(item => item.amount);
+      const isDark = document.documentElement.classList.contains('dark');
+      const hasData = amounts.some(a => a > 0);
+
+      document.getElementById('chart-empty-container').style.display = hasData ? 'none' : 'flex';
+
+      if (paymentsChartInstance) {
+        paymentsChartInstance.destroy();
+      }
+
+      paymentsChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Daily Revenue (₹)',
+            data: amounts,
+            borderColor: '#1d4ed8',
+            backgroundColor: 'rgba(29, 78, 216, 0.08)',
+            borderWidth: 2.5,
+            fill: true,
+            tension: 0.35,
+            pointRadius: hasData ? 3 : 0,
+            pointBackgroundColor: '#1d4ed8'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => ` ₹${Number(ctx.raw).toFixed(2)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { color: isDark ? '#64748b' : '#94a3b8', font: { size: 11 } }
+            },
+            y: {
+              beginAtZero: true,
+              grid: { color: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)' },
+              ticks: {
+                color: isDark ? '#64748b' : '#94a3b8',
+                callback: (val) => '₹' + val,
+                font: { size: 11 }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderChartTheme(chart) {
+      const isDark = document.documentElement.classList.contains('dark');
+      chart.options.scales.x.ticks.color = isDark ? '#64748b' : '#94a3b8';
+      chart.options.scales.y.ticks.color = isDark ? '#64748b' : '#94a3b8';
+      chart.options.scales.y.grid.color = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)';
+      chart.update();
+    }
+
+    function renderRecentTransactions(txns) {
+      const tbody = document.getElementById('recent-transactions-tbody');
+      const emptyBox = document.getElementById('recent-empty-state');
+      tbody.innerHTML = '';
+
+      if (txns.length === 0) {
+        emptyBox.style.display = 'flex';
+        return;
+      }
+      emptyBox.style.display = 'none';
+
+      txns.forEach(t => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="font-family: var(--font-mono); font-weight: 700;">
+            <a href="/pay/${t.id}" target="_blank" style="color: #1d4ed8;">${t.id}</a>
+          </td>
+          <td style="font-weight: 700; font-family: var(--font-mono);">₹${Number(t.payable_amount).toFixed(2)}</td>
+          <td><span class="badge badge-${t.status}">${t.status}</span></td>
+          <td style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);">${t.utr || '—'}</td>
+          <td style="font-size: 12px; color: var(--text-muted);">${new Date(t.created_at).toLocaleString()}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 2. Connect Tab
+    async function loadConnection() {
+      try {
+        const res = await fetch('/api/admin/connection');
+        const data = await res.json();
+        const badge = document.getElementById('conn-status-badge');
+        const topbarBadge = document.getElementById('topbar-conn-badge');
+        const topbarText = document.getElementById('topbar-conn-text');
+        const card = document.getElementById('conn-status-card');
+        const disconnectBtn = document.getElementById('btn-disconnect-conn');
+
+        if (data.connected) {
+          topbarBadge.className = 'connection-status-pill status-connected';
+          topbarText.innerText = 'Connected';
+          badge.className = 'badge badge-paid';
+          badge.innerText = 'Active Worker';
+          disconnectBtn.style.display = 'inline-flex';
+          card.style.display = 'block';
+
+          document.getElementById('conn-upi-id').value = data.upi_id || '';
+          document.getElementById('conn-gmail').value = data.gmail || '';
+          document.getElementById('conn-app-password').placeholder = '•••••••••••••••• (Leave blank to keep current)';
+          document.getElementById('conn-app-password').required = false;
+
+          document.getElementById('conn-last-checked').innerText = `Last polled: ${data.last_checked ? new Date(data.last_checked).toLocaleTimeString() : 'Never'}`;
+          if (data.last_error) {
+            document.getElementById('conn-last-error').innerText = `Error: ${data.last_error}`;
+            document.getElementById('conn-last-error').style.display = 'block';
+          } else {
+            document.getElementById('conn-last-error').style.display = 'none';
+          }
+        } else {
+          topbarBadge.className = 'connection-status-pill status-disconnected';
+          topbarText.innerText = 'Disconnected';
+          disconnectBtn.style.display = 'none';
+          card.style.display = 'none';
+          document.getElementById('conn-app-password').placeholder = '16-character Google App Password';
+          document.getElementById('conn-app-password').required = true;
+        }
+      } catch (err) {
+        console.error('Failed to load connection:', err);
+      }
+    }
+
+    document.getElementById('connect-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-save-conn');
+      btn.disabled = true;
+      btn.innerText = 'Verifying IMAP SSL...';
+
+      const upi_id = document.getElementById('conn-upi-id').value.trim();
+      const gmail = document.getElementById('conn-gmail').value.trim();
+      const app_password = document.getElementById('conn-app-password').value.trim();
+
+      try {
+        const res = await fetch('/api/admin/connection', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ upi_id, gmail, app_password })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('FamApp & Gmail connection verified and active!', 'success');
+          loadConnection();
+        } else {
+          showToast(data.error?.message || 'Connection test failed', 'error');
+        }
+      } catch (err) {
+        showToast('Error connecting to gateway backend', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Verify & Save Connection';
+      }
+    });
+
+    async function disconnectFamApp() {
+      const confirmed = await showConfirmModal(
+        'Disconnect FamApp Email Poller?',
+        'This will stop the automated background email checking. Incoming UPI payments will not be verified automatically until reconnected.',
+        'Disconnect',
+        true
+      );
+      if (!confirmed) return;
+
+      try {
+        const res = await fetch('/api/admin/connection/disconnect', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('FamApp disconnected', 'info');
+          document.getElementById('conn-upi-id').value = '';
+          document.getElementById('conn-gmail').value = '';
+          document.getElementById('conn-app-password').value = '';
+          loadConnection();
+        }
+      } catch (err) {
+        showToast('Failed to disconnect', 'error');
+      }
+    }
+
+    // 3. Payment Links Tab
+    function openCreateLinkModal() {
+      document.getElementById('link-amount').value = '';
+      document.getElementById('link-note').value = '';
+      document.getElementById('link-redirect-url').value = '';
+      openModal('modal-create-link');
+    }
+
+    async function loadPaymentLinks() {
+      try {
+        const res = await fetch('/api/admin/orders?source=link');
+        const data = await res.json();
+        const tbody = document.getElementById('links-table-tbody');
+        const empty = document.getElementById('links-empty-state');
+        tbody.innerHTML = '';
+
+        if (!data.success || !data.orders || data.orders.length === 0) {
+          empty.style.display = 'flex';
+          return;
+        }
+        empty.style.display = 'none';
+
+        data.orders.forEach(o => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td style="font-family: var(--font-mono); font-weight: 700;">
+              <a href="/pay/${o.id}" target="_blank" style="color: #1d4ed8;">${o.id}</a>
+            </td>
+            <td style="font-family: var(--font-mono);">₹${Number(o.base_amount).toFixed(2)}</td>
+            <td style="font-family: var(--font-mono); font-weight: 700; color: #1d4ed8;">₹${Number(o.payable_amount).toFixed(2)}</td>
+            <td><span class="badge badge-${o.status}">${o.status}</span></td>
+            <td style="font-size: 12px; color: var(--text-muted);">${new Date(o.created_at).toLocaleString()}</td>
+            <td>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn btn-secondary btn-sm" onclick="copyLink('/pay/${o.id}')">Copy</button>
+                <a href="/pay/${o.id}" target="_blank" class="btn btn-secondary btn-sm">Open ↗</a>
+                ${o.status === 'pending' ? `<button class="btn btn-danger btn-sm" onclick="cancelOrder('${o.id}')">Cancel</button>` : ''}
+              </div>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        console.error('Failed to load links:', err);
+      }
+    }
+
+    function copyLink(path) {
+      const fullUrl = window.location.origin + path;
+      navigator.clipboard.writeText(fullUrl);
+      showToast('Checkout link copied to clipboard!', 'success');
+    }
+
+    document.getElementById('form-create-link').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const amount = parseFloat(document.getElementById('link-amount').value);
+      const note = document.getElementById('link-note').value.trim();
+      const redirect_url = document.getElementById('link-redirect-url').value.trim();
+
+      try {
+        const res = await fetch('/api/admin/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount, note, redirect_url, source: 'link' })
+        });
+        const data = await res.json();
+        if (data.success) {
+          closeModal('modal-create-link');
+          showToast('Payment link generated!', 'success');
+          loadPaymentLinks();
+          copyLink(`/pay/${data.order.order_id}`);
+        } else {
+          showToast(data.error?.message || 'Failed to generate link', 'error');
+        }
+      } catch (err) {
+        showToast('Error generating link', 'error');
+      }
+    });
+
+    async function cancelOrder(orderId) {
+      const confirmed = await showConfirmModal(
+        'Cancel Payment Order?',
+        `Cancel order ${orderId}? The customer will no longer be able to pay for this request.`,
+        'Cancel Order',
+        true
+      );
+      if (!confirmed) return;
+
+      try {
+        const res = await fetch(`/api/admin/orders/${orderId}/cancel`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('Order cancelled', 'info');
+          loadPaymentLinks();
+          loadTransactions();
+          loadDashboard();
+        }
+      } catch (err) {
+        showToast('Error cancelling order', 'error');
+      }
+    }
+
+    // 4. Transactions Tab
+    async function loadTransactions() {
+      const status = document.getElementById('filter-status').value;
+      const url = `/api/admin/orders${status ? `?status=${status}` : ''}`;
+
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        const tbody = document.getElementById('transactions-table-tbody');
+        const empty = document.getElementById('transactions-empty-state');
+        tbody.innerHTML = '';
+
+        if (!data.success || !data.orders || data.orders.length === 0) {
+          empty.style.display = 'flex';
+          return;
+        }
+        empty.style.display = 'none';
+
+        data.orders.forEach(o => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td style="font-family: var(--font-mono); font-weight: 700;">
+              <a href="/pay/${o.id}" target="_blank" style="color: #1d4ed8;">${o.id}</a>
+            </td>
+            <td><span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">${o.source}</span></td>
+            <td style="font-weight: 700; font-family: var(--font-mono);">₹${Number(o.payable_amount).toFixed(2)}</td>
+            <td><span class="badge badge-${o.status}">${o.status}</span></td>
+            <td style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);">${o.utr || '—'}</td>
+            <td style="font-size: 12px; color: var(--text-muted);">${new Date(o.created_at).toLocaleString()}</td>
+            <td style="font-size: 12px; color: var(--text-muted);">${o.paid_at ? new Date(o.paid_at).toLocaleString() : '—'}</td>
+            <td>
+              <div style="display: flex; gap: 6px;">
+                <a href="/pay/${o.id}" target="_blank" class="btn btn-secondary btn-sm">View</a>
+                ${o.status === 'pending' ? `<button class="btn btn-danger btn-sm" onclick="cancelOrder('${o.id}')">Cancel</button>` : ''}
+              </div>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        console.error('Failed to load transactions:', err);
+      }
+    }
+
+    function exportTransactionsCSV() {
+      window.location.href = '/api/admin/orders/export';
+    }
+
+    async function loadUnmatched() {
+      try {
+        const res = await fetch('/api/admin/unmatched');
+        const data = await res.json();
+        const tbody = document.getElementById('unmatched-table-tbody');
+        const empty = document.getElementById('unmatched-empty-state');
+        tbody.innerHTML = '';
+
+        if (!data.success || !data.unmatched || data.unmatched.length === 0) {
+          empty.style.display = 'flex';
+          return;
+        }
+        empty.style.display = 'none';
+
+        data.unmatched.forEach(u => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td style="font-family: var(--font-mono); font-weight: 700; color: #ef4444;">₹${Number(u.amount).toFixed(2)}</td>
+            <td>${u.sender_name || 'UPI Customer'}</td>
+            <td style="font-family: var(--font-mono); font-size: 12px;">${u.utr || '—'}</td>
+            <td style="font-size: 12px; color: var(--text-muted);">${new Date(u.received_at).toLocaleString()}</td>
+            <td style="font-size: 12px; color: #ef4444;">${u.reason}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        console.error('Failed to load unmatched:', err);
+      }
+    }
+
+    // 5. API Keys Tab
+    function openCreateApiKeyModal() {
+      document.getElementById('key-name').value = '';
+      openModal('modal-create-key');
+    }
+
+    async function loadApiKeys() {
+      try {
+        const res = await fetch('/api/admin/keys');
+        const data = await res.json();
+        const tbody = document.getElementById('api-keys-tbody');
+        const empty = document.getElementById('keys-empty-state');
+        tbody.innerHTML = '';
+
+        if (!data.success || !data.keys || data.keys.length === 0) {
+          empty.style.display = 'flex';
+          return;
+        }
+        empty.style.display = 'none';
+
+        data.keys.forEach(k => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td style="font-weight: 700;">${k.name}</td>
+            <td style="font-family: var(--font-mono); font-size: 13px;">${k.prefix}...</td>
+            <td style="font-size: 12px; color: var(--text-muted);">${new Date(k.created_at).toLocaleDateString()}</td>
+            <td><span class="badge ${k.revoked ? 'badge-failed' : 'badge-paid'}">${k.revoked ? 'Revoked' : 'Active'}</span></td>
+            <td>
+              ${!k.revoked ? `<button class="btn btn-danger btn-sm" onclick="revokeKey(${k.id})">Revoke</button>` : '<span style="color:var(--text-dim); font-size:12px;">Revoked</span>'}
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        console.error('Failed to load keys:', err);
+      }
+    }
+
+    document.getElementById('form-create-key').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('key-name').value.trim();
+
+      try {
+        const res = await fetch('/api/admin/keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        });
+        const data = await res.json();
+        if (data.success) {
+          closeModal('modal-create-key');
+          document.getElementById('new-key-display').value = data.raw_key;
+          openModal('modal-show-key');
+          loadApiKeys();
+        } else {
+          showToast(data.error?.message || 'Failed to generate key', 'error');
+        }
+      } catch (err) {
+        showToast('Error generating key', 'error');
+      }
+    });
+
+    function copyNewKey() {
+      const val = document.getElementById('new-key-display').value;
+      navigator.clipboard.writeText(val);
+      showToast('API Key copied to clipboard!', 'success');
+    }
+
+    async function revokeKey(keyId) {
+      const confirmed = await showConfirmModal(
+        'Revoke API Key?',
+        'Any server or external integration using this key will immediately lose access.',
+        'Revoke Key',
+        true
+      );
+      if (!confirmed) return;
+
+      try {
+        const res = await fetch(`/api/admin/keys/${keyId}/revoke`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('API Key revoked', 'info');
+          loadApiKeys();
+        }
+      } catch (err) {
+        showToast('Failed to revoke key', 'error');
+      }
+    }
+
+    async function loadWebhookSecret() {
+      try {
+        const res = await fetch('/api/admin/webhook-secret');
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('webhook-secret-display').value = data.webhook_secret;
+        }
+      } catch (err) {
+        console.error('Failed to load webhook secret:', err);
+      }
+    }
+
+    function copyWebhookSecret() {
+      const val = document.getElementById('webhook-secret-display').value;
+      navigator.clipboard.writeText(val);
+      showToast('Webhook secret copied to clipboard!', 'success');
+    }
+
+    async function confirmRegenerateWebhookSecret() {
+      const confirmed = await showConfirmModal(
+        'Regenerate Webhook Secret?',
+        'Your existing webhook callbacks will fail signature verification until updated on your receiving application servers.',
+        'Regenerate Secret',
+        true
+      );
+      if (!confirmed) return;
+
+      try {
+        const res = await fetch('/api/admin/webhook-secret/regenerate', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('webhook-secret-display').value = data.webhook_secret;
+          showToast('New webhook secret generated!', 'success');
+        }
+      } catch (err) {
+        showToast('Failed to regenerate secret', 'error');
+      }
+    }
+
+    async function loadWebhookLogs() {
+      try {
+        const res = await fetch('/api/admin/webhook-logs');
+        const data = await res.json();
+        const tbody = document.getElementById('webhook-logs-tbody');
+        const empty = document.getElementById('webhooks-empty-state');
+        tbody.innerHTML = '';
+
+        if (!data.success || !data.logs || data.logs.length === 0) {
+          empty.style.display = 'flex';
+          return;
+        }
+        empty.style.display = 'none';
+
+        data.logs.forEach(l => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td style="font-family: var(--font-mono); font-weight: 700;">${l.order_id}</td>
+            <td style="font-family: var(--font-mono); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${l.url}</td>
+            <td>${l.attempt}</td>
+            <td style="font-family: var(--font-mono);">${l.response_code || '—'}</td>
+            <td><span class="badge ${l.success ? 'badge-paid' : 'badge-failed'}">${l.success ? 'Delivered' : 'Failed'}</span></td>
+            <td style="font-size: 12px; color: var(--text-muted);">${new Date(l.created_at).toLocaleTimeString()}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        console.error('Failed to load webhook logs:', err);
+      }
+    }
+
+    // 6. Settings Tab
+    async function loadSettingsProfile() {
+      try {
+        const res = await fetch('/api/me');
+        const data = await res.json();
+        if (data.logged_in && data.admin) {
+          currentAdmin = data.admin;
+          document.getElementById('settings-name').value = data.admin.name || '';
+          document.getElementById('settings-email').value = data.admin.email || '';
+          document.getElementById('drawer-user-name').innerText = data.admin.name || 'Administrator';
+          document.getElementById('drawer-user-email').innerText = data.admin.email || 'admin';
+          document.getElementById('drawer-user-avatar').innerText = (data.admin.name || 'A')[0].toUpperCase();
+        }
+      } catch (err) {
+        console.error('Failed to load profile:', err);
+      }
+    }
+
+    document.getElementById('settings-profile-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('settings-name').value.trim();
+      const email = document.getElementById('settings-email').value.trim();
+      const new_password = document.getElementById('settings-new-password').value;
+      const confirm_password = document.getElementById('settings-confirm-password').value;
+
+      if (new_password && new_password !== confirm_password) {
+        showToast('New passwords do not match', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('btn-save-settings');
+      btn.disabled = true;
+      btn.innerText = 'Saving...';
+
+      try {
+        const payload = { name, email };
+        if (new_password) payload.password = new_password;
+
+        const res = await fetch('/api/admin/profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('Profile updated successfully!', 'success');
+          document.getElementById('settings-new-password').value = '';
+          document.getElementById('settings-confirm-password').value = '';
+          loadSettingsProfile();
+        } else {
+          showToast(data.error?.message || 'Failed to update profile', 'error');
+        }
+      } catch (err) {
+        showToast('Error saving settings', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Save Profile Changes';
+      }
+    });
+
+    // Logout
+    async function confirmLogout() {
+      const confirmed = await showConfirmModal(
+        'Sign Out of MinorUPI?',
+        'You will need your administrator email and password to log back into the gateway.',
+        'Sign Out',
+        false
+      );
+      if (!confirmed) return;
+
+      try {
+        await fetch('/api/logout', { method: 'POST' });
+        window.location.href = '/login';
+      } catch (err) {
+        window.location.href = '/login';
+      }
+    }
+
+    // Initialize App
+    window.addEventListener('DOMContentLoaded', async () => {
+      initTheme();
+
+      // Check auth status
+      try {
+        const res = await fetch('/api/me');
+        const data = await res.json();
+        if (!data.logged_in) {
+          window.location.href = data.setup_required ? '/setup' : '/login';
+          return;
+        }
+
+        currentAdmin = data.admin;
+        document.getElementById('drawer-user-name').innerText = data.admin.name || 'Administrator';
+        document.getElementById('drawer-user-email').innerText = data.admin.email || 'admin';
+        document.getElementById('drawer-user-avatar').innerText = (data.admin.name || 'A')[0].toUpperCase();
+
+        // Initial tab load
+        loadDashboard();
+        loadConnection();
+
+        // Background poller: refresh dashboard stats and connection state every 10 seconds
+        setInterval(() => {
+          const currentTab = document.querySelector('.tab-content.active')?.id;
+          if (currentTab === 'tab-dashboard') loadDashboard();
+          else if (currentTab === 'tab-connect') loadConnection();
+        }, 10000);
+
+      } catch (err) {
+        console.error('Initialization error:', err);
+      }
+    });
+  </script>
+</body>
+</html>

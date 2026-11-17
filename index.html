@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MinorUPI — Private Personal UPI Gateway</title>
+  <meta name="description" content="MinorUPI: Private, self-hosted UPI payment gateway with automated FamApp email verification, dynamic paise offset, and instant settlement.">
+  <meta property="og:title" content="MinorUPI — Private Personal UPI Gateway">
+  <meta property="og:description" content="Self-hosted private UPI payment gateway with instant FamApp email verification, automated order expiry, dynamic paise offset, and webhook retries.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    /* ==========================================================================
+       CSS THEME VARIABLES (:root)
+       ========================================================================== */
+    :root {
+      --bg-page: #dbe4ee;
+      --bg-surface: #ffffff;
+      --bg-card: #eef2f6;
+      --bg-card-inner: #ffffff;
+      --blue-accent: #1d4ed8;
+      --blue-accent-hover: #1e40af;
+      --blue-glow: rgba(29, 78, 216, 0.25);
+      --border-color: #cbd5e1;
+      --border-focus: #1d4ed8;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --text-dim: #94a3b8;
+      --success: #10b981;
+      --success-bg: rgba(16, 185, 129, 0.12);
+      --warning: #f59e0b;
+      --warning-bg: rgba(245, 158, 11, 0.12);
+      --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.12);
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 26px;
+      --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
+      --shadow-card: 0 12px 32px -4px rgba(15, 23, 42, 0.12), 0 4px 12px -2px rgba(15, 23, 42, 0.06);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-page);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
+    }
+
+    a {
+      color: var(--blue-accent);
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Common Components */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      min-height: 44px;
+      padding: 11px 20px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-decoration: none !important;
+      font-family: inherit;
+    }
+    .btn-primary {
+      background: var(--blue-accent);
+      color: #ffffff;
+      box-shadow: 0 4px 14px var(--blue-glow);
+    }
+    .btn-primary:hover {
+      background: var(--blue-accent-hover);
+      transform: translateY(-1px);
+    }
+    .btn-secondary {
+      background: #e2e8f0;
+      color: var(--text-main);
+      border-color: var(--border-color);
+    }
+    .btn-secondary:hover {
+      background: #cbd5e1;
+    }
+    .btn-block {
+      width: 100%;
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+      text-align: left;
+    }
+    .form-group label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .form-control {
+      width: 100%;
+      min-height: 44px;
+      padding: 11px 14px;
+      background: #ffffff;
+      border: 1.5px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-main);
+      font-size: 16px; /* 16px prevents iOS browser zoom on focus */
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .form-control:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px var(--blue-glow);
+    }
+    .form-control::placeholder {
+      color: #94a3b8;
+    }
+
+    /* Views container */
+    .view-container {
+      display: none;
+      width: 100%;
+      flex: 1;
+    }
+    .view-container.active {
+      display: flex;
+    }
+
+    /* ==========================================================================
+       CHECKOUT VIEW (EXACT MATCH TO REFERENCE SCREENSHOT IMG_20260908_170558)
+       ========================================================================== */
+    #view-checkout {
+      align-items: center;
+      justify-content: center;
+      padding: 30px 16px;
+    }
+
+    .checkout-wrapper {
+      position: relative;
+      width: 100%;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+
+    /* The vibrant royal blue offset card behind the main card */
+    .checkout-offset-bg {
+      position: absolute;
+      top: 14px;
+      left: 8px;
+      width: 100%;
+      height: 100%;
+      background: #1d4ed8;
+      border-radius: 28px;
+      z-index: 1;
+    }
+
+    /* Main Checkout Card */
+    .checkout-card {
+      position: relative;
+      z-index: 2;
+      background: #eef2f6;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 26px;
+      padding: 26px 22px;
+      box-shadow: var(--shadow-card);
+      text-align: left;
+    }
+
+    /* Header brand */
+    .checkout-header {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      margin-bottom: 20px;
+    }
+    .checkout-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      background: #1d4ed8;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 1.15rem;
+      flex-shrink: 0;
+      box-shadow: 0 4px 10px rgba(29, 78, 216, 0.3);
+    }
+    .brand-title-wrap {
+      display: flex;
+      align-items: baseline;
+      line-height: 1;
+    }
+    .brand-text-minor {
+      font-size: 20px;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.3px;
+    }
+    .brand-text-upi {
+      font-size: 20px;
+      font-weight: 800;
+      color: #1d4ed8;
+      letter-spacing: -0.3px;
+    }
+    .brand-text-tm {
+      font-size: 10px;
+      font-weight: 700;
+      color: #1d4ed8;
+      vertical-align: super;
+      margin-left: 2px;
+    }
+
+    /* Order Total */
+    .order-total-section {
+      margin-bottom: 16px;
+    }
+    .order-total-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      color: #64748b;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .order-total-amount {
+      display: flex;
+      align-items: baseline;
+      font-size: 32px;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.5px;
+    }
+    .currency-symbol {
+      font-size: 30px;
+      font-weight: 800;
+      margin-right: 5px;
+      color: #0f172a;
+    }
+    .amount-digits {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+    .currency-code {
+      font-size: 14px;
+      font-weight: 700;
+      color: #64748b;
+      margin-left: 7px;
+    }
+    .offset-indicator {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 3px;
+      display: none;
+    }
+
+    /* QR Code Inner Box */
+    .qr-box-wrapper {
+      position: relative;
+      background: #ffffff;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 20px;
+      padding: 20px 16px 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 250px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+    .qr-image {
+      width: 200px;
+      height: 200px;
+      display: block;
+      border-radius: 6px;
+      transition: filter 0.3s ease;
+    }
+    .qr-caption {
+      margin-top: 14px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    /* Action buttons: Save QR and Pay Now */
+    .checkout-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 18px;
+      margin-bottom: 22px;
+    }
+    .btn-checkout-secondary {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: #dbe3ec;
+      border: 1px solid #cbd5e1;
+      color: #1e293b;
+      font-weight: 700;
+      font-size: 14px;
+      min-height: 44px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-decoration: none !important;
+    }
+    .btn-checkout-secondary:hover {
+      background: #cbd5e1;
+    }
+    .btn-checkout-primary {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: #1d4ed8;
+      border: 1px solid #1d4ed8;
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 14px;
+      min-height: 44px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      box-shadow: 0 4px 12px rgba(29, 78, 216, 0.28);
+      text-decoration: none !important;
+    }
+    .btn-checkout-primary:hover {
+      background: #1e40af;
+      transform: translateY(-1px);
+    }
+
+    /* Details Meta Rows */
+    .checkout-meta-list {
+      display: flex;
+      flex-direction: column;
+      gap: 13px;
+    }
+    .meta-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13.5px;
+    }
+    .meta-label {
+      color: #64748b;
+      font-weight: 500;
+    }
+    .meta-val {
+      color: #0f172a;
+      font-weight: 700;
+      text-align: right;
+    }
+    .meta-val.font-mono {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .expires-val {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: #0f172a;
+      font-weight: 600;
+    }
+    .verification-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #dbeafe;
+      color: #1d4ed8;
+      font-weight: 700;
+      font-size: 12px;
+      padding: 5px 14px;
+      border-radius: 9999px;
+    }
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #1d4ed8;
+      animation: pulseDot 1.5s infinite;
+    }
+    @keyframes pulseDot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.35; transform: scale(0.75); }
+    }
+
+    /* Animated status overlays */
+    .qr-status-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(4px);
+      border-radius: 18px;
+      padding: 20px;
+      color: #0f172a;
+      z-index: 10;
+      text-align: center;
+    }
+    .qr-status-overlay.active {
+      display: flex;
+    }
+    .anim-check-circle {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: rgba(16, 185, 129, 0.12);
+      border: 3px solid #10b981;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+      animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .anim-check-circle svg {
+      width: 40px;
+      height: 40px;
+      stroke: #10b981;
+      stroke-width: 4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+      stroke-dasharray: 60;
+      stroke-dashoffset: 60;
+      animation: drawCheck 0.7s 0.2s ease forwards;
+    }
+    @keyframes drawCheck {
+      to { stroke-dashoffset: 0; }
+    }
+    @keyframes popIn {
+      0% { transform: scale(0.5); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .anim-hourglass-circle {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: #f1f5f9;
+      border: 3px solid #94a3b8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+    .anim-cross-circle {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+    .circle-danger {
+      background: rgba(239, 68, 68, 0.1);
+      border: 3px solid #ef4444;
+      color: #ef4444;
+    }
+    .circle-warning {
+      background: rgba(245, 158, 11, 0.1);
+      border: 3px solid #f59e0b;
+      color: #f59e0b;
+    }
+
+    /* ==========================================================================
+       SETUP & LOGIN VIEWS
+       ========================================================================== */
+    #view-setup, #view-login {
+      align-items: center;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+    .auth-card {
+      width: 100%;
+      max-width: 420px;
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 36px 30px;
+      box-shadow: var(--shadow-card);
+      text-align: center;
+    }
+    .auth-logo {
+      width: 52px;
+      height: 52px;
+      background: #1d4ed8;
+      border-radius: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 800;
+      font-size: 1.6rem;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 20px var(--blue-glow);
+    }
+    .auth-title {
+      font-size: 1.45rem;
+      font-weight: 800;
+      color: #0f172a;
+      margin-bottom: 6px;
+      letter-spacing: -0.3px;
+    }
+    .auth-subtitle {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+      line-height: 1.45;
+    }
+    .alert-box {
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      margin-bottom: 18px;
+      display: none;
+      text-align: left;
+    }
+    .alert-error {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+    }
+    .alert-success {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+    }
+
+    /* ==========================================================================
+       DOCUMENTATION VIEW
+       ========================================================================== */
+    #view-docs {
+      flex-direction: column;
+      background: #f8fafc;
+    }
+    .docs-navbar {
+      border-bottom: 1px solid #e2e8f0;
+      padding: 16px 24px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .docs-layout {
+      display: flex;
+      flex: 1;
+      max-width: 1300px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    .docs-sidebar {
+      width: 260px;
+      border-right: 1px solid #e2e8f0;
+      padding: 24px 16px;
+      background: #ffffff;
+      height: calc(100vh - 65px);
+      position: sticky;
+      top: 65px;
+      overflow-y: auto;
+    }
+    .docs-content {
+      flex: 1;
+      padding: 36px 48px;
+      max-width: 960px;
+      overflow-y: auto;
+      background: #f8fafc;
+    }
+    .docs-nav-group {
+      margin-bottom: 22px;
+    }
+    .docs-nav-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+      padding-left: 10px;
+    }
+    .docs-nav-link {
+      display: block;
+      padding: 8px 12px;
+      color: #475569;
+      border-radius: var(--radius-sm);
+      font-size: 0.88rem;
+      font-weight: 600;
+      text-decoration: none !important;
+      transition: all 0.15s;
+    }
+    .docs-nav-link:hover, .docs-nav-link.active {
+      color: #1d4ed8;
+      background: #eff6ff;
+    }
+    .docs-content h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      margin-bottom: 12px;
+      color: #0f172a;
+      letter-spacing: -0.5px;
+    }
+    .docs-content h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 36px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #e2e8f0;
+      color: #0f172a;
+    }
+    .docs-content h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin: 24px 0 10px;
+      color: #1d4ed8;
+    }
+    .docs-content p {
+      color: #475569;
+      margin-bottom: 16px;
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+    .code-box {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: #f8fafc;
+      overflow-x: auto;
+      margin-bottom: 20px;
+      position: relative;
+    }
+    .copy-btn-code {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .copy-btn-code:hover {
+      color: white;
+      background: #334155;
+    }
+    .param-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+      font-size: 0.88rem;
+      background: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .param-table th, .param-table td {
+      border: 1px solid #e2e8f0;
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .param-table th {
+      background: #f1f5f9;
+      color: #475569;
+      font-weight: 700;
+    }
+
+    /* Toast notification system */
+    #toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto;
+      min-width: 280px;
+      max-width: 380px;
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #ffffff;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: slideInToast 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .toast-success { background: #059669; }
+    .toast-error { background: #dc2626; }
+    .toast-info { background: #1d4ed8; }
+    @keyframes slideInToast {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      .docs-layout { flex-direction: column; }
+      .docs-sidebar { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid #e2e8f0; }
+      .docs-content { padding: 24px 16px; }
+      .checkout-actions { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- ========================================================================
+       VIEW 1: CHECKOUT PAGE (/pay/<order_id>)
+       ======================================================================== -->
+  <div id="view-checkout" class="view-container">
+    <div class="checkout-wrapper">
+      <!-- Offset Blue Layer -->
+      <div class="checkout-offset-bg"></div>
+
+      <!-- Main Checkout Card -->
+      <div class="checkout-card">
+        
+        <!-- Header: MinorUPI™ Logo -->
+        <div class="checkout-header">
+          <div class="checkout-brand">
+            <div class="brand-icon">M</div>
+            <div class="brand-title-wrap">
+              <span class="brand-text-minor">Minor</span>
+              <span class="brand-text-upi">UPI</span>
+              <span class="brand-text-tm">™</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Order Total Section -->
+        <div class="order-total-section">
+          <div class="order-total-label">ORDER TOTAL</div>
+          <div class="order-total-amount">
+            <span class="currency-symbol">₹</span>
+            <span id="co-amount" class="amount-digits">0.00</span>
+            <span class="currency-code">INR</span>
+          </div>
+          <div id="co-offset-note" class="offset-indicator">
+            Includes dynamic paise verification offset
+          </div>
+        </div>
+
+        <!-- QR Code Box -->
+        <div class="qr-box-wrapper">
+          <img id="co-qr-img" class="qr-image" src="" alt="UPI Payment QR Code">
+          <div class="qr-caption">SCAN WITH ANY UPI APP</div>
+
+          <!-- Animated Status Overlays -->
+          <div id="co-overlay-paid" class="qr-status-overlay">
+            <div class="anim-check-circle">
+              <svg viewBox="0 0 24 24">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </div>
+            <h3 style="font-size: 1.25rem; font-weight: 800; color: #10b981; margin-bottom: 4px;">Payment Successful</h3>
+            <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 12px;">Amount ₹<span id="co-paid-amount"></span> verified</p>
+            <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 6px 14px; font-family: var(--font-mono); font-size: 0.8rem; color: #065f46; font-weight: 700;">
+              UTR: <span id="co-paid-utr"></span>
+            </div>
+            <p id="co-redirect-countdown" style="font-size: 0.75rem; color: #94a3b8; margin-top: 14px; display: none;">Redirecting in 3 seconds...</p>
+          </div>
+
+          <div id="co-overlay-expired" class="qr-status-overlay">
+            <div class="anim-hourglass-circle">
+              <span style="font-size: 2rem;">⌛</span>
+            </div>
+            <h3 style="font-size: 1.25rem; font-weight: 800; color: #64748b; margin-bottom: 6px;">Payment Expired</h3>
+            <p style="font-size: 0.85rem; color: #94a3b8;">The payment window has closed. Please request a new payment link.</p>
+          </div>
+
+          <div id="co-overlay-cancelled" class="qr-status-overlay">
+            <div class="anim-cross-circle circle-warning">
+              <span style="font-size: 2rem;">✕</span>
+            </div>
+            <h3 style="font-size: 1.25rem; font-weight: 800; color: #d97706; margin-bottom: 6px;">Payment Cancelled</h3>
+            <p style="font-size: 0.85rem; color: #94a3b8;">This payment request was cancelled by the merchant.</p>
+          </div>
+
+          <div id="co-overlay-failed" class="qr-status-overlay">
+            <div class="anim-cross-circle circle-danger">
+              <span style="font-size: 2rem;">⚠</span>
+            </div>
+            <h3 style="font-size: 1.25rem; font-weight: 800; color: #dc2626; margin-bottom: 6px;">Payment Failed</h3>
+            <p id="co-fail-reason" style="font-size: 0.85rem; color: #ef4444;">Verification could not be completed.</p>
+          </div>
+        </div>
+
+        <!-- Action Buttons Side-by-Side: Save QR & Pay Now -->
+        <div class="checkout-actions">
+          <a id="co-btn-save-qr" href="#" download="MinorUPI-QR.png" class="btn-checkout-secondary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Save QR
+          </a>
+          <a id="co-btn-pay-now" href="#" class="btn-checkout-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+              <line x1="12" y1="18" x2="12.01" y2="18"></line>
+            </svg>
+            Pay Now
+          </a>
+        </div>
+
+        <!-- Details Meta Rows -->
+        <div class="checkout-meta-list">
+          <div class="meta-row">
+            <span class="meta-label">Merchant</span>
+            <span id="co-merchant-name" class="meta-val">Loading...</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Order ID</span>
+            <span id="co-order-id" class="meta-val font-mono">...</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Expires In</span>
+            <span class="meta-val expires-val">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+              Expires in <span id="co-timer" style="font-family: var(--font-mono); font-variant-numeric: tabular-nums;">05:00</span>
+            </span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Verification</span>
+            <span id="co-verification-pill" class="verification-pill">
+              <span class="pulse-dot"></span>
+              <span id="co-verification-text">Waiting for payment...</span>
+            </span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       VIEW 2: INITIAL ADMIN SETUP (/setup)
+       ======================================================================== -->
+  <div id="view-setup" class="view-container">
+    <div class="auth-card">
+      <div class="auth-logo">M</div>
+      <h2 class="auth-title">First-Time Setup</h2>
+      <p class="auth-subtitle">Create your private MinorUPI gateway administrator account. This runs once and locks permanently after creation.</p>
+      
+      <div id="setup-alert" class="alert-box alert-error"></div>
+
+      <form id="setup-form" autocomplete="on">
+        <div class="form-group">
+          <label for="setup-name">Your Full Name</label>
+          <input type="text" id="setup-name" class="form-control" placeholder="Your Full Name" autocomplete="name" required>
+        </div>
+        <div class="form-group">
+          <label for="setup-email">Admin Email</label>
+          <input type="email" id="setup-email" class="form-control" placeholder="you@example.com" autocomplete="email" required>
+        </div>
+        <div class="form-group">
+          <label for="setup-password">Admin Password</label>
+          <input type="password" id="setup-password" class="form-control" placeholder="Choose a strong password" autocomplete="new-password" required minlength="8">
+        </div>
+        <div class="form-group">
+          <label for="setup-confirm">Confirm Password</label>
+          <input type="password" id="setup-confirm" class="form-control" placeholder="Confirm your password" autocomplete="new-password" required minlength="8">
+        </div>
+        <button type="submit" id="btn-submit-setup" class="btn btn-primary btn-block">
+          Create Admin Account & Launch
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       VIEW 3: ADMIN LOGIN (/login)
+       ======================================================================== -->
+  <div id="view-login" class="view-container">
+    <div class="auth-card">
+      <div class="auth-logo">M</div>
+      <h2 class="auth-title">Admin Sign In</h2>
+      <p class="auth-subtitle">Enter your private administrator credentials to manage MinorUPI gateway.</p>
+
+      <div id="login-alert" class="alert-box alert-error"></div>
+
+      <form id="login-form" autocomplete="on">
+        <div class="form-group">
+          <label for="login-email">Admin Email</label>
+          <input type="email" id="login-email" class="form-control" placeholder="you@example.com" autocomplete="email" required autofocus>
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" class="form-control" placeholder="Your password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" id="btn-submit-login" class="btn btn-primary btn-block">
+          Sign In to Dashboard
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       VIEW 4: DEVELOPER DOCUMENTATION (/docs)
+       ======================================================================== -->
+  <div id="view-docs" class="view-container">
+    <header class="docs-navbar">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div class="brand-icon" style="width: 32px; height: 32px; font-size: 1rem;">M</div>
+        <span style="font-weight: 800; font-size: 1.15rem; color: #0f172a;">Minor<span style="color:#1d4ed8;">UPI</span>™ API Docs</span>
+      </div>
+      <div>
+        <a href="/login" class="btn btn-secondary btn-sm" style="min-height: 38px; padding: 6px 14px;">Admin Dashboard →</a>
+      </div>
+    </header>
+
+    <div class="docs-layout">
+      <aside class="docs-sidebar">
+        <div class="docs-nav-group">
+          <div class="docs-nav-title">Getting Started</div>
+          <a href="#doc-overview" class="docs-nav-link active">Overview</a>
+          <a href="#doc-auth" class="docs-nav-link">Authentication</a>
+        </div>
+        <div class="docs-nav-group">
+          <div class="docs-nav-title">API Endpoints</div>
+          <a href="#doc-create-order" class="docs-nav-link">Create Order</a>
+          <a href="#doc-get-order" class="docs-nav-link">Check Status</a>
+          <a href="#doc-cancel-order" class="docs-nav-link">Cancel Order</a>
+        </div>
+        <div class="docs-nav-group">
+          <div class="docs-nav-title">Webhooks</div>
+          <a href="#doc-webhooks" class="docs-nav-link">Payload & Security</a>
+          <a href="#doc-verify-hmac" class="docs-nav-link">HMAC Signature</a>
+        </div>
+        <div class="docs-nav-group">
+          <div class="docs-nav-title">AI Integration</div>
+          <a href="#doc-ai-prompt" class="docs-nav-link">AI Prompt Generator</a>
+        </div>
+      </aside>
+
+      <main class="docs-content">
+        <section id="doc-overview">
+          <h1>MinorUPI Integration Guide</h1>
+          <p>MinorUPI is your private, single-admin UPI payment gateway. It provides direct peer-to-peer UPI payments with zero payment aggregator transaction cuts, automatic FamApp email receipt verification, unique paise offset mapping, and cryptographic webhook callbacks.</p>
+        </section>
+
+        <section id="doc-auth">
+          <h2>Authentication</h2>
+          <p>All private API endpoints require an API Key passed via header. You generate API keys from the MinorUPI Dashboard under the API tab.</p>
+          <div class="code-box">
+            <button class="copy-btn-code" onclick="copySnippet(this)">Copy</button>
+            <pre>X-API-Key: mupi_live_your_secret_key_here
+# Or standard bearer header:
+Authorization: Bearer mupi_live_your_secret_key_here</pre>
+          </div>
+        </section>
+
+        <section id="doc-create-order">
+          <h2>Create Order</h2>
+          <p>Create a payment request for a specific amount in INR. MinorUPI automatically assigns an available paise offset (e.g. ₹50.00 -> ₹50.01) to distinguish multiple simultaneous transactions.</p>
+          <div class="code-box">
+            <button class="copy-btn-code" onclick="copySnippet(this)">Copy</button>
+            <pre>POST /api/v1/orders
+Content-Type: application/json
+X-API-Key: &lt;YOUR_API_KEY&gt;
+
+{
+  "amount": 50.00,
+  "order_id": "ORD_1001",
+  "callback_url": "https://yourwebsite.com/api/payment-webhook",
+  "redirect_url": "https://yourwebsite.com/checkout/success",
+  "expiry_minutes": 5,
+  "note": "Pro Tier Subscription"
+}</pre>
+          </div>
+        </section>
+
+        <section id="doc-webhooks">
+          <h2>Webhook Verification (HMAC-SHA256)</h2>
+          <p>When customer payment is verified via FamApp notification, MinorUPI sends an instantaneous POST request to your <code>callback_url</code> with header <code>X-Signature</code> containing the HMAC-SHA256 hex digest of the raw body signed with your Webhook Secret.</p>
+          
+          <div class="code-box">
+            <button class="copy-btn-code" onclick="copySnippet(this)">Copy</button>
+            <pre># Python (Flask / FastAPI)
+import hmac, hashlib
+
+def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
+    expected = hmac.new(webhook_secret.encode(), raw_body_bytes, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature_header)</pre>
+          </div>
+        </section>
+
+        <section id="doc-ai-prompt">
+          <h2>AI Integration Prompt Generator</h2>
+          <p>Generate a complete, framework-specific prompt to instruct Cursor, Claude, or any AI assistant to implement MinorUPI integration into your web application in one shot.</p>
+
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+            <div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px;">
+              <div>
+                <label style="font-size: 12px; font-weight: 700; color: #64748b; display: block; margin-bottom: 4px;">Target Tech Stack</label>
+                <select id="docs-prompt-stack" class="form-control" style="width: auto; min-width: 160px; min-height: 38px; padding: 6px 12px;">
+                  <option value="python">Python (Flask / FastAPI)</option>
+                  <option value="node">Node.js (Express)</option>
+                  <option value="php">PHP (Vanilla / Laravel)</option>
+                </select>
+              </div>
+              <div style="display: flex; align-items: center; gap: 16px; margin-top: 18px;">
+                <label style="font-size: 13px; font-weight: 600; color: #475569; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" id="docs-prompt-inc-key"> Include Active API Key
+                </label>
+                <label style="font-size: 13px; font-weight: 600; color: #475569; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input type="checkbox" id="docs-prompt-inc-sec"> Include Webhook Secret
+                </label>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 14px;">
+              <button id="docs-btn-copy-prompt" class="btn btn-primary btn-sm" style="min-height: 38px;">📋 Copy Prompt</button>
+              <a id="docs-btn-download-prompt" href="/ai-prompt.txt" download="minorupi-prompt.txt" class="btn btn-secondary btn-sm" style="min-height: 38px;">📥 Download .txt</a>
+            </div>
+
+            <pre id="docs-prompt-preview" style="background: #0f172a; color: #f8fafc; padding: 14px; border-radius: 8px; font-size: 12px; max-height: 250px; overflow-y: auto; font-family: var(--font-mono); white-space: pre-wrap;">Loading AI prompt...</pre>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    // State variables
+    let currentOrderId = null;
+    let orderRedirectUrl = null;
+    let pollInterval = null;
+    let timerCountdownInterval = null;
+    let secondsRemaining = 0;
+
+    // Toast utility
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.innerText = message;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => toast.remove(), 250);
+      }, 3500);
+    }
+
+    function copySnippet(btn) {
+      const code = btn.nextElementSibling.innerText;
+      navigator.clipboard.writeText(code);
+      btn.innerText = 'Copied!';
+      setTimeout(() => btn.innerText = 'Copy', 2000);
+    }
+
+    // Client-side Router
+    async function initRouter() {
+      const path = window.location.pathname;
+
+      if (path.startsWith('/pay/')) {
+        const orderId = path.split('/pay/')[1].split('/')[0];
+        currentOrderId = orderId;
+        showView('view-checkout');
+        await loadCheckoutData(orderId);
+      } else if (path === '/setup') {
+        showView('view-setup');
+      } else if (path === '/login') {
+        showView('view-login');
+      } else if (path === '/docs') {
+        showView('view-docs');
+        loadDocsPrompt();
+      } else {
+        // Root path /
+        try {
+          const res = await fetch('/api/me');
+          const data = await res.json();
+          if (data.setup_required) {
+            window.location.href = '/setup';
+          } else if (data.logged_in) {
+            window.location.href = '/dashboard';
+          } else {
+            window.location.href = '/login';
+          }
+        } catch (e) {
+          showView('view-login');
+        }
+      }
+    }
+
+    function showView(viewId) {
+      document.querySelectorAll('.view-container').forEach(el => el.classList.remove('active'));
+      const target = document.getElementById(viewId);
+      if (target) target.classList.add('active');
+    }
+
+    // Checkout Logic
+    async function loadCheckoutData(orderId) {
+      try {
+        const res = await fetch(`/api/public/order/${orderId}`);
+        const data = await res.json();
+        if (!data.success) {
+          showToast(data.error?.message || "Order not found", "error");
+          return;
+        }
+
+        const o = data.order;
+        document.getElementById('co-merchant-name').innerText = o.merchant_name || 'MinorUPI Merchant';
+        document.getElementById('co-order-id').innerText = o.order_id;
+        document.getElementById('co-amount').innerText = Number(o.payable_amount).toFixed(2);
+        document.getElementById('co-qr-img').src = o.qr_base64;
+        document.getElementById('co-btn-save-qr').href = `/api/public/qr/${o.order_id}.png`;
+        document.getElementById('co-btn-pay-now').href = o.upi_link;
+        orderRedirectUrl = o.redirect_url;
+
+        if (o.payable_amount !== o.base_amount) {
+          document.getElementById('co-offset-note').style.display = 'block';
+        }
+
+        secondsRemaining = o.seconds_left || 0;
+        startCountdownTimer();
+        updateCheckoutStatus(o.status, o.utr, o.fail_reason);
+
+        // Start polling status every 3 seconds
+        if (o.status === 'pending') {
+          if (pollInterval) clearInterval(pollInterval);
+          pollInterval = setInterval(() => pollCheckoutStatus(orderId), 3000);
+        }
+      } catch (err) {
+        console.error("Failed to load checkout:", err);
+      }
+    }
+
+    async function pollCheckoutStatus(orderId) {
+      try {
+        const res = await fetch(`/api/public/status/${orderId}`);
+        const data = await res.json();
+        if (data.success) {
+          secondsRemaining = data.seconds_left || 0;
+          updateCheckoutStatus(data.status, data.utr, data.fail_reason);
+          if (data.status !== 'pending' && pollInterval) {
+            clearInterval(pollInterval);
+          }
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }
+
+    function updateCheckoutStatus(status, utr, failReason) {
+      const verPill = document.getElementById('co-verification-pill');
+      const verText = document.getElementById('co-verification-text');
+      const qrImg = document.getElementById('co-qr-img');
+
+      // Hide all overlays first
+      document.querySelectorAll('.qr-status-overlay').forEach(el => el.classList.remove('active'));
+
+      if (status === 'paid') {
+        verPill.style.background = '#d1fae5';
+        verPill.style.color = '#065f46';
+        verText.innerText = 'Payment Verified ✓';
+        document.getElementById('co-paid-amount').innerText = document.getElementById('co-amount').innerText;
+        document.getElementById('co-paid-utr').innerText = utr || 'Verified';
+        document.getElementById('co-overlay-paid').classList.add('active');
+
+        if (orderRedirectUrl) {
+          const rElem = document.getElementById('co-redirect-countdown');
+          rElem.style.display = 'block';
+          setTimeout(() => {
+            window.location.href = orderRedirectUrl;
+          }, 3000);
+        }
+      } else if (status === 'expired') {
+        verPill.style.background = '#f1f5f9';
+        verPill.style.color = '#64748b';
+        verText.innerText = 'Order Expired';
+        document.getElementById('co-timer').innerText = '00:00';
+        document.getElementById('co-overlay-expired').classList.add('active');
+        qrImg.style.filter = 'grayscale(100%) blur(3px)';
+      } else if (status === 'cancelled') {
+        verPill.style.background = '#fef3c7';
+        verPill.style.color = '#92400e';
+        verText.innerText = 'Order Cancelled';
+        document.getElementById('co-overlay-cancelled').classList.add('active');
+      } else if (status === 'failed') {
+        verPill.style.background = '#fee2e2';
+        verPill.style.color = '#991b1b';
+        verText.innerText = 'Verification Failed';
+        if (failReason) document.getElementById('co-fail-reason').innerText = failReason;
+        document.getElementById('co-overlay-failed').classList.add('active');
+      } else {
+        // Pending
+        verPill.style.background = '#dbeafe';
+        verPill.style.color = '#1d4ed8';
+        verText.innerText = 'Waiting for payment...';
+      }
+    }
+
+    function startCountdownTimer() {
+      if (timerCountdownInterval) clearInterval(timerCountdownInterval);
+      const timerElem = document.getElementById('co-timer');
+
+      function update() {
+        if (secondsRemaining <= 0) {
+          timerElem.innerText = '00:00';
+          return;
+        }
+        const m = Math.floor(secondsRemaining / 60);
+        const s = secondsRemaining % 60;
+        timerElem.innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        secondsRemaining--;
+      }
+      update();
+      timerCountdownInterval = setInterval(update, 1000);
+    }
+
+    // Setup Form
+    document.getElementById('setup-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const alertBox = document.getElementById('setup-alert');
+      alertBox.style.display = 'none';
+
+      const name = document.getElementById('setup-name').value.trim();
+      const email = document.getElementById('setup-email').value.trim();
+      const password = document.getElementById('setup-password').value;
+      const confirm_password = document.getElementById('setup-confirm').value;
+
+      if (password !== confirm_password) {
+        alertBox.innerText = 'Passwords do not match';
+        alertBox.style.display = 'block';
+        return;
+      }
+
+      const btn = document.getElementById('btn-submit-setup');
+      btn.disabled = true;
+      btn.innerText = 'Creating Account...';
+
+      try {
+        const res = await fetch('/api/setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, password, confirm_password })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('Admin account created! Redirecting to dashboard...', 'success');
+          setTimeout(() => { window.location.href = '/dashboard'; }, 1000);
+        } else {
+          alertBox.innerText = data.error?.message || 'Setup failed';
+          alertBox.style.display = 'block';
+          btn.disabled = false;
+          btn.innerText = 'Create Admin Account & Launch';
+        }
+      } catch (err) {
+        alertBox.innerText = 'Error connecting to server. Please check your network.';
+        alertBox.style.display = 'block';
+        btn.disabled = false;
+        btn.innerText = 'Create Admin Account & Launch';
+      }
+    });
+
+    // Login Form
+    document.getElementById('login-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const alertBox = document.getElementById('login-alert');
+      alertBox.style.display = 'none';
+
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+
+      const btn = document.getElementById('btn-submit-login');
+      btn.disabled = true;
+      btn.innerText = 'Signing In...';
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('Welcome back! Redirecting...', 'success');
+          setTimeout(() => { window.location.href = '/dashboard'; }, 500);
+        } else {
+          alertBox.innerText = data.error?.message || 'Invalid email or password';
+          alertBox.style.display = 'block';
+          btn.disabled = false;
+          btn.innerText = 'Sign In to Dashboard';
+        }
+      } catch (err) {
+        alertBox.innerText = 'Error connecting to server. Please try again.';
+        alertBox.style.display = 'block';
+        btn.disabled = false;
+        btn.innerText = 'Sign In to Dashboard';
+      }
+    });
+
+    // AI Prompt Widget in Docs
+    async function loadDocsPrompt() {
+      const stack = document.getElementById('docs-prompt-stack')?.value || 'python';
+      const incKey = document.getElementById('docs-prompt-inc-key')?.checked ? '1' : '0';
+      const incSec = document.getElementById('docs-prompt-inc-sec')?.checked ? '1' : '0';
+      const url = `/ai-prompt.txt?stack=${stack}&include_key=${incKey}&include_secret=${incSec}`;
+
+      try {
+        const res = await fetch(url);
+        const text = await res.text();
+        const preview = document.getElementById('docs-prompt-preview');
+        if (preview) preview.innerText = text;
+        const dlBtn = document.getElementById('docs-btn-download-prompt');
+        if (dlBtn) dlBtn.href = url;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    document.getElementById('docs-prompt-stack')?.addEventListener('change', loadDocsPrompt);
+    document.getElementById('docs-prompt-inc-key')?.addEventListener('change', loadDocsPrompt);
+    document.getElementById('docs-prompt-inc-sec')?.addEventListener('change', loadDocsPrompt);
+
+    document.getElementById('docs-btn-copy-prompt')?.addEventListener('click', () => {
+      const text = document.getElementById('docs-prompt-preview').innerText;
+      navigator.clipboard.writeText(text);
+      const btn = document.getElementById('docs-btn-copy-prompt');
+      btn.innerText = '✓ Copied!';
+      setTimeout(() => { btn.innerText = '📋 Copy Prompt'; }, 2000);
+    });
+
+    window.addEventListener('DOMContentLoaded', initRouter);
+  </script>
+</body>
+</html>

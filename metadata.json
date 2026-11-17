@@ -1,0 +1,6 @@
+{
+  "name": "Private Personal UPI Payment Gateway",
+  "description": "Self-hosted private UPI payment gateway with instant FamApp email verification, automated order expiry, dynamic paise offset, webhook retries, and AI integration prompt generator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
