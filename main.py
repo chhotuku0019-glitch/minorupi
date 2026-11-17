@@ -32,6 +32,8 @@ from flask import (
     Response, make_response
 )
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from cryptography.fernet import Fernet
 import qrcode
 from qrcode.constants import ERROR_CORRECT_M
@@ -56,10 +58,25 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # FLASK APPLICATION & IN-MEMORY RATE LIMITERS
 # ==============================================================================
 app = Flask(__name__)
+# Add ProxyFix so HTTPS and client IP behind proxy (Cloud Run, Render, nginx) are properly recognized
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = False  # Set to True on HTTPS in production
+app.config["SESSION_COOKIE_SECURE"] = False  # Set dynamically for HTTPS in after_request
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
+
+@app.after_request
+def dynamic_cookie_security(response):
+    is_https = request.is_secure or request.headers.get("X-Forwarded-Proto") == "https"
+    if is_https:
+        cookies = response.headers.getlist("Set-Cookie")
+        if cookies:
+            response.headers.remove("Set-Cookie")
+            for c in cookies:
+                if "session=" in c and "Secure" not in c:
+                    c = c + "; Secure"
+                response.headers.add("Set-Cookie", c)
+    return response
 
 # In-memory tracking for brute-force login protection and API rate limits
 login_failed_attempts = defaultdict(list)  # ip -> [timestamps]
@@ -250,19 +267,83 @@ def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
 # ==============================================================================
-# CSRF & RATE LIMITING HELPERS
+# STATELESS SIGNED CSRF & CONFIGURATION HELPERS
 # ==============================================================================
-def get_or_create_csrf_token():
-    if "csrf_token" not in session:
-        session["csrf_token"] = secrets.token_hex(24)
-    return session["csrf_token"]
+CSRF_SALT = "minorupi-csrf-token-salt"
+CSRF_MAX_AGE_SECONDS = 43200  # 12 hours valid
+
+def get_csrf_serializer():
+    # Use app.secret_key (guaranteed persisted in database settings table)
+    key = app.secret_key or "minorupi-fallback-secret-key"
+    return URLSafeTimedSerializer(key, salt=CSRF_SALT)
+
+def generate_csrf_token():
+    s = get_csrf_serializer()
+    nonce = secrets.token_hex(16)
+    return s.dumps({"nonce": nonce, "ts": int(time.time())})
+
+def verify_csrf_token(token: str) -> bool:
+    if not token or not isinstance(token, str):
+        return False
+    s = get_csrf_serializer()
+    try:
+        data = s.loads(token, max_age=CSRF_MAX_AGE_SECONDS)
+        return isinstance(data, dict) and "nonce" in data
+    except (BadSignature, SignatureExpired, Exception):
+        return False
 
 def verify_csrf():
-    # Only verify for state-changing admin calls
-    token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
-    if not token or token != session.get("csrf_token"):
-        return False
-    return True
+    # 1. Origin / Referer validation if present
+    origin = request.headers.get("Origin") or request.headers.get("Referer")
+    if origin:
+        try:
+            parsed_origin = urllib.parse.urlparse(origin).netloc.lower()
+            req_host = request.host.lower()
+            if parsed_origin and req_host and parsed_origin != req_host:
+                is_local = (parsed_origin.startswith("localhost") or parsed_origin.startswith("127.0.0.1")) and \
+                           (req_host.startswith("localhost") or req_host.startswith("127.0.0.1"))
+                if not is_local:
+                    return False
+        except Exception:
+            return False
+
+    # 2. Extract token from Header X-CSRF-Token, Form, or JSON body
+    token = request.headers.get("X-CSRF-Token")
+    if not token and request.form:
+        token = request.form.get("csrf_token")
+    if not token and request.is_json:
+        try:
+            json_body = request.get_json(silent=True)
+            if isinstance(json_body, dict):
+                token = json_body.get("csrf_token")
+        except Exception:
+            pass
+
+    return verify_csrf_token(token)
+
+def csrf_error_response():
+    return jsonify({
+        "success": False,
+        "error": {
+            "code": "CSRF_INVALID",
+            "message": "Invalid or expired CSRF token. Please refresh and try again."
+        }
+    }), 403
+
+def is_gateway_configured() -> bool:
+    """
+    Checks if FamApp UPI ID + Gmail + App Password have been connected
+    and the IMAP verification test succeeded (status == 'connected').
+    """
+    with get_db() as db:
+        row = db.execute("SELECT upi_id, gmail, encrypted_app_password, status FROM connection WHERE id = 1").fetchone()
+        if not row:
+            return False
+        if not (row["upi_id"] and row["gmail"] and row["encrypted_app_password"]):
+            return False
+        if row["status"] != "connected":
+            return False
+        return True
 
 def is_ip_rate_limited(ip_address: str) -> bool:
     now = time.time()
@@ -683,12 +764,12 @@ def poll_gmail_imap():
 
         # Update last connection health
         with get_db() as db:
-            db.execute("UPDATE connection SET last_checked = ?, last_error = NULL WHERE id = 1", (iso_now(),))
+            db.execute("UPDATE connection SET status = 'connected', last_checked = ?, last_error = NULL WHERE id = 1", (iso_now(),))
             db.commit()
 
     except Exception as e:
         with get_db() as db:
-            db.execute("UPDATE connection SET last_error = ?, last_checked = ? WHERE id = 1", (str(e), iso_now()))
+            db.execute("UPDATE connection SET status = 'disconnected', last_error = ?, last_checked = ? WHERE id = 1", (str(e), iso_now()))
             db.commit()
     finally:
         if mail:
@@ -1023,14 +1104,31 @@ def route_ai_prompt_txt():
     return Response(prompt, mimetype="text/plain; charset=utf-8")
 
 # ==============================================================================
-# PUBLIC API & CHECKOUT ENDPOINTS (Section 5, 6, 8.1)
+# CSRF TOKEN ENDPOINT & PUBLIC API / CHECKOUT ENDPOINTS (Section 5, 6, 8.1)
 # ==============================================================================
+@app.route("/api/csrf", methods=["GET"])
+def api_get_csrf():
+    return jsonify({
+        "success": True,
+        "token": generate_csrf_token()
+    })
+
 @app.route("/api/public/order/<order_id>")
 def api_public_order(order_id):
     with get_db() as db:
         order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
         if not order:
             return jsonify({"success": False, "error": {"code": "ORDER_NOT_FOUND", "message": "Order not found"}}), 404
+
+        # Block checkout if merchant has not configured UPI & Gmail (Bug 2)
+        if order["status"] == "pending" and not is_gateway_configured():
+            return jsonify({
+                "success": False,
+                "error": {
+                    "code": "NOT_CONFIGURED",
+                    "message": "Merchant is not configured or temporarily unavailable. Payments are currently paused."
+                }
+            }), 503
         
         # Calculate seconds remaining until expiry
         try:
@@ -1075,6 +1173,15 @@ def api_public_status(order_id):
         order = db.execute("SELECT id, status, payable_amount, utr, redirect_url, expires_at, fail_reason FROM orders WHERE id = ?", (order_id,)).fetchone()
         if not order:
             return jsonify({"success": False, "error": {"code": "ORDER_NOT_FOUND", "message": "Order not found"}}), 404
+
+        if order["status"] == "pending" and not is_gateway_configured():
+            return jsonify({
+                "success": False,
+                "error": {
+                    "code": "NOT_CONFIGURED",
+                    "message": "Merchant is not configured or temporarily unavailable."
+                }
+            }), 503
 
         try:
             exp_dt = datetime.fromisoformat(order["expires_at"].replace("Z", "+00:00"))
@@ -1123,6 +1230,15 @@ def api_v1_create_order():
     is_authed, auth_res = verify_api_key_auth()
     if not is_authed:
         return jsonify({"success": False, "error": auth_res}), 401
+
+    if not is_gateway_configured():
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "NOT_CONFIGURED",
+                "message": "Gateway is not configured. Connect your UPI ID and Gmail first."
+            }
+        }), 409
 
     data = request.get_json(silent=True) or {}
     amount_raw = data.get("amount")
@@ -1298,6 +1414,9 @@ def api_v1_list_orders():
 # ==============================================================================
 @app.route("/api/setup", methods=["POST"])
 def api_setup():
+    if not verify_csrf():
+        return csrf_error_response()
+
     with get_db() as db:
         if db.execute("SELECT id FROM admin LIMIT 1").fetchone():
             return jsonify({"success": False, "error": {"code": "FORBIDDEN", "message": "Setup is permanently disabled. Admin already exists."}}), 403
@@ -1325,11 +1444,17 @@ def api_setup():
 
     session.permanent = True
     session["admin_id"] = admin_id
-    get_or_create_csrf_token()
-    return jsonify({"success": True, "message": "Admin account created successfully"})
+    return jsonify({
+        "success": True,
+        "message": "Admin account created successfully",
+        "csrf_token": generate_csrf_token()
+    })
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
+    if not verify_csrf():
+        return csrf_error_response()
+
     ip = request.remote_addr or "127.0.0.1"
     if is_ip_rate_limited(ip):
         return jsonify({"success": False, "error": {"code": "TOO_MANY_REQUESTS", "message": "Too many failed attempts. Try again in 1 minute."}}), 429
@@ -1347,13 +1472,21 @@ def api_login():
     reset_failed_login(ip)
     session.permanent = True
     session["admin_id"] = admin_row["id"]
-    get_or_create_csrf_token()
-    return jsonify({"success": True, "message": "Logged in successfully"})
+    return jsonify({
+        "success": True,
+        "message": "Logged in successfully",
+        "csrf_token": generate_csrf_token()
+    })
 
 @app.route("/api/logout", methods=["POST"])
 def api_logout():
+    if not verify_csrf():
+        return csrf_error_response()
     session.clear()
-    return jsonify({"success": True})
+    return jsonify({
+        "success": True,
+        "csrf_token": generate_csrf_token()
+    })
 
 @app.route("/api/me")
 def api_me():
@@ -1369,7 +1502,8 @@ def api_me():
         "admin_exists": admin_exists,
         "logged_in": admin_info is not None,
         "admin": admin_info,
-        "csrf_token": get_or_create_csrf_token()
+        "is_configured": is_gateway_configured(),
+        "csrf_token": generate_csrf_token()
     })
 
 @app.route("/api/admin/profile", methods=["POST"])
