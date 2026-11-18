@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>MinorUPI — Private Personal UPI Gateway</title>
   <meta name="description" content="MinorUPI: Private, self-hosted UPI payment gateway with automated FamApp email verification, dynamic paise offset, and instant settlement.">
   <meta property="og:title" content="MinorUPI — Private Personal UPI Gateway">
@@ -44,10 +44,19 @@
       --shadow-card: 0 12px 32px -4px rgba(15, 23, 42, 0.12), 0 4px 12px -2px rgba(15, 23, 42, 0.06);
     }
 
-    * {
+    *, *::before, *::after {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
+    }
+
+    html, body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    img, svg, canvas, video {
+      max-width: 100%;
     }
 
     body {
@@ -60,6 +69,7 @@
       flex-direction: column;
       -webkit-font-smoothing: antialiased;
       line-height: 1.5;
+      padding-bottom: env(safe-area-inset-bottom);
     }
 
     a {
@@ -159,7 +169,7 @@
     #view-checkout {
       align-items: center;
       justify-content: center;
-      padding: 30px 16px;
+      padding: max(20px, env(safe-area-inset-top)) 12px max(24px, env(safe-area-inset-bottom));
     }
 
     .checkout-wrapper {
@@ -167,15 +177,18 @@
       width: 100%;
       max-width: 400px;
       margin: 0 auto;
+      padding-right: 6px;
+      padding-bottom: 10px;
+      min-width: 0;
     }
 
     /* The vibrant royal blue offset card behind the main card */
     .checkout-offset-bg {
       position: absolute;
-      top: 14px;
-      left: 8px;
-      width: 100%;
-      height: 100%;
+      top: 10px;
+      left: 6px;
+      right: 0;
+      bottom: 0;
       background: #1d4ed8;
       border-radius: 28px;
       z-index: 1;
@@ -185,10 +198,12 @@
     .checkout-card {
       position: relative;
       z-index: 2;
+      width: 100%;
+      min-width: 0;
       background: #eef2f6;
       border: 1.5px solid #cbd5e1;
       border-radius: 26px;
-      padding: 26px 22px;
+      padding: clamp(18px, 4vw, 26px) clamp(14px, 4vw, 22px);
       box-shadow: var(--shadow-card);
       text-align: left;
     }
@@ -303,8 +318,9 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.02);
     }
     .qr-image {
-      width: 200px;
-      height: 200px;
+      width: min(200px, 100%);
+      height: auto;
+      aspect-ratio: 1 / 1;
       display: block;
       border-radius: 6px;
       transition: filter 0.3s ease;
@@ -322,8 +338,8 @@
     /* Action buttons: Save QR and Pay Now */
     .checkout-actions {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
       margin-top: 18px;
       margin-bottom: 22px;
     }
@@ -332,13 +348,14 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
+      min-width: 0;
       background: #dbe3ec;
       border: 1px solid #cbd5e1;
       color: #1e293b;
       font-weight: 700;
       font-size: 14px;
       min-height: 44px;
-      padding: 10px 14px;
+      padding: 10px 12px;
       border-radius: 12px;
       cursor: pointer;
       transition: all 0.15s ease;
@@ -352,13 +369,14 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
+      min-width: 0;
       background: #1d4ed8;
       border: 1px solid #1d4ed8;
       color: #ffffff;
       font-weight: 700;
       font-size: 14px;
       min-height: 44px;
-      padding: 10px 14px;
+      padding: 10px 12px;
       border-radius: 12px;
       cursor: pointer;
       transition: all 0.15s ease;
@@ -374,22 +392,30 @@
     .checkout-meta-list {
       display: flex;
       flex-direction: column;
-      gap: 13px;
+      gap: 12px;
+      min-width: 0;
     }
     .meta-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
       font-size: 13.5px;
+      min-width: 0;
     }
     .meta-label {
       color: #64748b;
       font-weight: 500;
+      flex-shrink: 0;
     }
     .meta-val {
       color: #0f172a;
       font-weight: 700;
       text-align: right;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .meta-val.font-mono {
       font-family: var(--font-mono);
@@ -411,8 +437,9 @@
       color: #1d4ed8;
       font-weight: 700;
       font-size: 12px;
-      padding: 5px 14px;
+      padding: 5px 12px;
       border-radius: 9999px;
+      max-width: 100%;
     }
     .pulse-dot {
       width: 7px;
@@ -517,15 +544,16 @@
     #view-setup, #view-login {
       align-items: center;
       justify-content: center;
-      padding: 40px 16px;
+      padding: max(24px, env(safe-area-inset-top)) 12px max(24px, env(safe-area-inset-bottom));
     }
     .auth-card {
       width: 100%;
       max-width: 420px;
+      min-width: 0;
       background: #ffffff;
       border: 1px solid var(--border-color);
       border-radius: var(--radius-lg);
-      padding: 36px 30px;
+      padding: clamp(22px, 5vw, 36px) clamp(16px, 5vw, 30px);
       box-shadow: var(--shadow-card);
       text-align: center;
     }
@@ -544,7 +572,7 @@
       box-shadow: 0 8px 20px var(--blue-glow);
     }
     .auth-title {
-      font-size: 1.45rem;
+      font-size: clamp(1.25rem, 4vw, 1.45rem);
       font-weight: 800;
       color: #0f172a;
       margin-bottom: 6px;
@@ -563,6 +591,7 @@
       margin-bottom: 18px;
       display: none;
       text-align: left;
+      overflow-wrap: anywhere;
     }
     .alert-error {
       background: #fef2f2;
@@ -581,34 +610,42 @@
     #view-docs {
       flex-direction: column;
       background: #f8fafc;
+      min-width: 0;
     }
     .docs-navbar {
       border-bottom: 1px solid #e2e8f0;
-      padding: 16px 24px;
+      padding: max(12px, env(safe-area-inset-top)) 16px 12px;
       background: #ffffff;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
     }
     .docs-layout {
       display: flex;
       flex: 1;
       max-width: 1300px;
       width: 100%;
+      min-width: 0;
       margin: 0 auto;
     }
     .docs-sidebar {
       width: 260px;
+      flex-shrink: 0;
       border-right: 1px solid #e2e8f0;
       padding: 24px 16px;
       background: #ffffff;
       height: calc(100vh - 65px);
+      height: calc(100dvh - 65px);
       position: sticky;
       top: 65px;
       overflow-y: auto;
     }
     .docs-content {
       flex: 1;
+      min-width: 0;
+      width: 100%;
       padding: 36px 48px;
       max-width: 960px;
       overflow-y: auto;
@@ -675,9 +712,15 @@
       font-family: var(--font-mono);
       font-size: 0.85rem;
       color: #f8fafc;
+      max-width: 100%;
       overflow-x: auto;
       margin-bottom: 20px;
       position: relative;
+    }
+    .code-box pre {
+      margin: 0;
+      overflow-x: auto;
+      max-width: 100%;
     }
     .copy-btn-code {
       position: absolute;
@@ -718,19 +761,21 @@
     /* Toast notification system */
     #toast-container {
       position: fixed;
-      top: 20px;
-      right: 20px;
+      top: max(12px, env(safe-area-inset-top));
+      right: max(12px, env(safe-area-inset-right));
       z-index: 9999;
       display: flex;
       flex-direction: column;
       gap: 10px;
       pointer-events: none;
+      max-width: calc(100vw - 24px);
     }
     .toast {
       pointer-events: auto;
-      min-width: 280px;
-      max-width: 380px;
-      padding: 12px 18px;
+      min-width: 0;
+      max-width: calc(100vw - 24px);
+      width: max-content;
+      padding: 12px 16px;
       border-radius: 10px;
       font-size: 0.88rem;
       font-weight: 600;
@@ -739,6 +784,7 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      overflow-wrap: anywhere;
       animation: slideInToast 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       transition: opacity 0.2s ease, transform 0.2s ease;
     }
@@ -754,7 +800,10 @@
     @media (max-width: 768px) {
       .docs-layout { flex-direction: column; }
       .docs-sidebar { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid #e2e8f0; }
-      .docs-content { padding: 24px 16px; }
+      .docs-content { padding: 20px 14px; }
+      .docs-content h1 { font-size: 1.65rem; }
+    }
+    @media (max-width: 360px) {
       .checkout-actions { grid-template-columns: 1fr; }
     }
   </style>
@@ -843,10 +892,18 @@
             <h3 style="font-size: 1.25rem; font-weight: 800; color: #dc2626; margin-bottom: 6px;">Payment Failed</h3>
             <p id="co-fail-reason" style="font-size: 0.85rem; color: #ef4444;">Verification could not be completed.</p>
           </div>
+
+          <div id="co-overlay-unavailable" class="qr-status-overlay">
+            <div class="anim-cross-circle circle-warning">
+              <span style="font-size: 2rem;">⚠</span>
+            </div>
+            <h3 style="font-size: 1.15rem; font-weight: 800; color: #d97706; margin-bottom: 6px;">Gateway Unavailable</h3>
+            <p id="co-unavailable-reason" style="font-size: 0.85rem; color: #64748b;">Merchant is not configured / temporarily unavailable.</p>
+          </div>
         </div>
 
         <!-- Action Buttons Side-by-Side: Save QR & Pay Now -->
-        <div class="checkout-actions">
+        <div id="co-actions-row" class="checkout-actions">
           <a id="co-btn-save-qr" href="#" download="MinorUPI-QR.png" class="btn-checkout-secondary">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -1053,17 +1110,17 @@ def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
           <h2>AI Integration Prompt Generator</h2>
           <p>Generate a complete, framework-specific prompt to instruct Cursor, Claude, or any AI assistant to implement MinorUPI integration into your web application in one shot.</p>
 
-          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 24px; min-width: 0;">
             <div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px;">
-              <div>
+              <div style="min-width: 0; flex: 1 1 200px;">
                 <label style="font-size: 12px; font-weight: 700; color: #64748b; display: block; margin-bottom: 4px;">Target Tech Stack</label>
-                <select id="docs-prompt-stack" class="form-control" style="width: auto; min-width: 160px; min-height: 38px; padding: 6px 12px;">
+                <select id="docs-prompt-stack" class="form-control" style="width: 100%; min-height: 38px; padding: 6px 12px;">
                   <option value="python">Python (Flask / FastAPI)</option>
                   <option value="node">Node.js (Express)</option>
                   <option value="php">PHP (Vanilla / Laravel)</option>
                 </select>
               </div>
-              <div style="display: flex; align-items: center; gap: 16px; margin-top: 18px;">
+              <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
                 <label style="font-size: 13px; font-weight: 600; color: #475569; display: flex; align-items: center; gap: 6px; cursor: pointer;">
                   <input type="checkbox" id="docs-prompt-inc-key"> Include Active API Key
                 </label>
@@ -1073,12 +1130,12 @@ def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
               </div>
             </div>
 
-            <div style="display: flex; gap: 10px; margin-bottom: 14px;">
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;">
               <button id="docs-btn-copy-prompt" class="btn btn-primary btn-sm" style="min-height: 38px;">📋 Copy Prompt</button>
               <a id="docs-btn-download-prompt" href="/ai-prompt.txt" download="minorupi-prompt.txt" class="btn btn-secondary btn-sm" style="min-height: 38px;">📥 Download .txt</a>
             </div>
 
-            <pre id="docs-prompt-preview" style="background: #0f172a; color: #f8fafc; padding: 14px; border-radius: 8px; font-size: 12px; max-height: 250px; overflow-y: auto; font-family: var(--font-mono); white-space: pre-wrap;">Loading AI prompt...</pre>
+            <pre id="docs-prompt-preview" style="background: #0f172a; color: #f8fafc; padding: 14px; border-radius: 8px; font-size: 12px; max-height: 250px; overflow-y: auto; overflow-x: auto; font-family: var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere;">Loading AI prompt...</pre>
           </div>
         </section>
       </main>
@@ -1114,6 +1171,63 @@ def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
       setTimeout(() => btn.innerText = 'Copy', 2000);
     }
 
+    // Shared CSRF & API Request Helper
+    let csrfToken = '';
+
+    async function fetchCsrfToken(force = false) {
+      if (csrfToken && !force) return csrfToken;
+      try {
+        const res = await fetch('/api/csrf', { credentials: 'same-origin' });
+        const data = await res.json();
+        if (data.success && data.token) {
+          csrfToken = data.token;
+        }
+      } catch (e) {
+        console.error('Failed to fetch CSRF token:', e);
+      }
+      return csrfToken;
+    }
+
+    async function api(path, method = 'GET', body = null, _retried = false) {
+      const upperMethod = method.toUpperCase();
+      const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(upperMethod);
+      if (isMutation && !csrfToken) {
+        await fetchCsrfToken(true);
+      }
+      const headers = {};
+      if (isMutation) {
+        headers['X-CSRF-Token'] = csrfToken;
+        headers['Content-Type'] = 'application/json';
+      } else if (body !== null && body !== undefined) {
+        headers['Content-Type'] = 'application/json';
+      }
+
+      const opts = {
+        method: upperMethod,
+        credentials: 'same-origin',
+        headers
+      };
+      if (body !== null && body !== undefined) {
+        opts.body = JSON.stringify(body);
+      }
+
+      const res = await fetch(path, opts);
+      let data = null;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        data = { success: res.ok, error: { code: 'HTTP_' + res.status, message: text || 'Unexpected server response' } };
+      }
+
+      if (res.status === 403 && data?.error?.code === 'CSRF_INVALID' && !_retried) {
+        await fetchCsrfToken(true);
+        return api(path, method, body, true);
+      }
+      return { status: res.status, ok: res.ok, data };
+    }
+
     // Client-side Router
     async function initRouter() {
       const path = window.location.pathname;
@@ -1125,19 +1239,17 @@ def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
         await loadCheckoutData(orderId);
       } else if (path === '/setup') {
         showView('view-setup');
-        await fetchCsrfToken();
+        await fetchCsrfToken(true);
       } else if (path === '/login') {
         showView('view-login');
-        await fetchCsrfToken();
+        await fetchCsrfToken(true);
       } else if (path === '/docs') {
         showView('view-docs');
         loadDocsPrompt();
       } else {
-        // Root path /
         try {
-          const res = await fetch('/api/me');
-          const data = await res.json();
-          if (data.setup_required) {
+          const { data } = await api('/api/me');
+          if (data.setup_required || !data.admin_exists) {
             window.location.href = '/setup';
           } else if (data.logged_in) {
             window.location.href = '/dashboard';
@@ -1146,6 +1258,7 @@ def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
           }
         } catch (e) {
           showView('view-login');
+          await fetchCsrfToken(true);
         }
       }
     }
@@ -1156,13 +1269,32 @@ def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
       if (target) target.classList.add('active');
     }
 
+    function showCheckoutUnavailable(message) {
+      document.querySelectorAll('.qr-status-overlay').forEach(el => el.classList.remove('active'));
+      const qrImg = document.getElementById('co-qr-img');
+      if (qrImg) qrImg.style.display = 'none';
+      const actionsRow = document.getElementById('co-actions-row');
+      if (actionsRow) actionsRow.style.display = 'none';
+      const verPill = document.getElementById('co-verification-pill');
+      const verText = document.getElementById('co-verification-text');
+      if (verPill && verText) {
+        verPill.style.background = '#fef3c7';
+        verPill.style.color = '#92400e';
+        verText.innerText = 'Temporarily Unavailable';
+      }
+      document.getElementById('co-unavailable-reason').innerText =
+        message || 'Merchant is not configured / temporarily unavailable.';
+      document.getElementById('co-overlay-unavailable').classList.add('active');
+    }
+
     // Checkout Logic
     async function loadCheckoutData(orderId) {
       try {
-        const res = await fetch(`/api/public/order/${orderId}`);
-        const data = await res.json();
+        const { data } = await api(`/api/public/order/${orderId}`);
         if (!data.success) {
-          showToast(data.error?.message || "Order not found", "error");
+          const msg = data.error?.message || 'Merchant is not configured / temporarily unavailable.';
+          showCheckoutUnavailable(msg);
+          showToast(msg, 'error');
           return;
         }
 
@@ -1170,7 +1302,10 @@ def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
         document.getElementById('co-merchant-name').innerText = o.merchant_name || 'MinorUPI Merchant';
         document.getElementById('co-order-id').innerText = o.order_id;
         document.getElementById('co-amount').innerText = Number(o.payable_amount).toFixed(2);
-        document.getElementById('co-qr-img').src = o.qr_base64;
+        const qrImg = document.getElementById('co-qr-img');
+        qrImg.style.display = 'block';
+        qrImg.src = o.qr_base64;
+        document.getElementById('co-actions-row').style.display = 'grid';
         document.getElementById('co-btn-save-qr').href = `/api/public/qr/${o.order_id}.png`;
         document.getElementById('co-btn-pay-now').href = o.upi_link;
         orderRedirectUrl = o.redirect_url;
@@ -1183,29 +1318,31 @@ def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
         startCountdownTimer();
         updateCheckoutStatus(o.status, o.utr, o.fail_reason);
 
-        // Start polling status every 3 seconds
         if (o.status === 'pending') {
           if (pollInterval) clearInterval(pollInterval);
           pollInterval = setInterval(() => pollCheckoutStatus(orderId), 3000);
         }
       } catch (err) {
-        console.error("Failed to load checkout:", err);
+        console.error('Failed to load checkout:', err);
+        showCheckoutUnavailable('Unable to reach payment gateway.');
       }
     }
 
     async function pollCheckoutStatus(orderId) {
       try {
-        const res = await fetch(`/api/public/status/${orderId}`);
-        const data = await res.json();
+        const { data } = await api(`/api/public/status/${orderId}`);
         if (data.success) {
           secondsRemaining = data.seconds_left || 0;
           updateCheckoutStatus(data.status, data.utr, data.fail_reason);
           if (data.status !== 'pending' && pollInterval) {
             clearInterval(pollInterval);
           }
+        } else if (data.error?.code === 'NOT_CONFIGURED') {
+          if (pollInterval) clearInterval(pollInterval);
+          showCheckoutUnavailable(data.error.message);
         }
       } catch (err) {
-        console.error("Polling error:", err);
+        console.error('Polling error:', err);
       }
     }
 
@@ -1214,7 +1351,6 @@ def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
       const verText = document.getElementById('co-verification-text');
       const qrImg = document.getElementById('co-qr-img');
 
-      // Hide all overlays first
       document.querySelectorAll('.qr-status-overlay').forEach(el => el.classList.remove('active'));
 
       if (status === 'paid') {
@@ -1251,7 +1387,6 @@ def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
         if (failReason) document.getElementById('co-fail-reason').innerText = failReason;
         document.getElementById('co-overlay-failed').classList.add('active');
       } else {
-        // Pending
         verPill.style.background = '#dbeafe';
         verPill.style.color = '#1d4ed8';
         verText.innerText = 'Waiting for payment...';
@@ -1276,20 +1411,6 @@ def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
       timerCountdownInterval = setInterval(update, 1000);
     }
 
-    let csrfToken = '';
-
-    async function fetchCsrfToken() {
-      try {
-        const res = await fetch('/api/csrf');
-        const data = await res.json();
-        if (data.success && data.token) {
-          csrfToken = data.token;
-        }
-      } catch (e) {
-        console.error('Failed to fetch CSRF token:', e);
-      }
-    }
-
     // Setup Form
     document.getElementById('setup-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1304,6 +1425,7 @@ def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
       if (password !== confirm_password) {
         alertBox.innerText = 'Passwords do not match';
         alertBox.style.display = 'block';
+        showToast('Passwords do not match', 'error');
         return;
       }
 
@@ -1312,29 +1434,25 @@ def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
       btn.innerText = 'Creating Account...';
 
       try {
-        const res = await fetch('/api/setup', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': csrfToken
-          },
-          body: JSON.stringify({ name, email, password, confirm_password })
-        });
-        const data = await res.json();
+        const { data } = await api('/api/setup', 'POST', { name, email, password, confirm_password });
         if (data.success) {
           if (data.csrf_token) csrfToken = data.csrf_token;
           showToast('Admin account created! Redirecting to dashboard...', 'success');
-          setTimeout(() => { window.location.href = '/dashboard'; }, 1000);
+          setTimeout(() => { window.location.href = '/dashboard'; }, 700);
         } else {
-          alertBox.innerText = data.error?.message || 'Setup failed';
+          const msg = data.error?.message || 'Setup failed';
+          alertBox.innerText = msg;
           alertBox.style.display = 'block';
+          showToast(msg, 'error');
           btn.disabled = false;
           btn.innerText = 'Create Admin Account & Launch';
-          await fetchCsrfToken();
+          await fetchCsrfToken(true);
         }
       } catch (err) {
-        alertBox.innerText = 'Error connecting to server. Please check your network.';
+        const msg = 'Error connecting to server. Please check your network.';
+        alertBox.innerText = msg;
         alertBox.style.display = 'block';
+        showToast(msg, 'error');
         btn.disabled = false;
         btn.innerText = 'Create Admin Account & Launch';
       }
@@ -1354,29 +1472,25 @@ def verify_webhook(raw_body_bytes, signature_header, webhook_secret):
       btn.innerText = 'Signing In...';
 
       try {
-        const res = await fetch('/api/login', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': csrfToken
-          },
-          body: JSON.stringify({ email, password })
-        });
-        const data = await res.json();
+        const { data } = await api('/api/login', 'POST', { email, password });
         if (data.success) {
           if (data.csrf_token) csrfToken = data.csrf_token;
           showToast('Welcome back! Redirecting...', 'success');
-          setTimeout(() => { window.location.href = '/dashboard'; }, 500);
+          setTimeout(() => { window.location.href = '/dashboard'; }, 400);
         } else {
-          alertBox.innerText = data.error?.message || 'Invalid email or password';
+          const msg = data.error?.message || 'Invalid email or password';
+          alertBox.innerText = msg;
           alertBox.style.display = 'block';
+          showToast(msg, 'error');
           btn.disabled = false;
           btn.innerText = 'Sign In to Dashboard';
-          await fetchCsrfToken();
+          await fetchCsrfToken(true);
         }
       } catch (err) {
-        alertBox.innerText = 'Error connecting to server. Please try again.';
+        const msg = 'Error connecting to server. Please try again.';
+        alertBox.innerText = msg;
         alertBox.style.display = 'block';
+        showToast(msg, 'error');
         btn.disabled = false;
         btn.innerText = 'Sign In to Dashboard';
       }

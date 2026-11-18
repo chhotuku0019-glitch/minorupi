@@ -31,6 +31,7 @@ from flask import (
     Flask, request, jsonify, session, redirect, send_file,
     Response, make_response
 )
+from flask.sessions import SecureCookieSessionInterface
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -62,21 +63,23 @@ app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = False  # Set dynamically for HTTPS in after_request
+app.config["SESSION_COOKIE_SECURE"] = False  # Overridden dynamically per-request below
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
-@app.after_request
-def dynamic_cookie_security(response):
-    is_https = request.is_secure or request.headers.get("X-Forwarded-Proto") == "https"
-    if is_https:
-        cookies = response.headers.getlist("Set-Cookie")
-        if cookies:
-            response.headers.remove("Set-Cookie")
-            for c in cookies:
-                if "session=" in c and "Secure" not in c:
-                    c = c + "; Secure"
-                response.headers.add("Set-Cookie", c)
-    return response
+class DynamicCookieSessionInterface(SecureCookieSessionInterface):
+    def _is_https_request(self):
+        fwd_proto = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip().lower()
+        return bool(request.is_secure or fwd_proto == "https")
+
+    def get_cookie_secure(self, app):
+        return self._is_https_request()
+
+    def get_cookie_samesite(self, app):
+        if self._is_https_request():
+            return "None"
+        return "Lax"
+
+app.session_interface = DynamicCookieSessionInterface()
 
 # In-memory tracking for brute-force login protection and API rate limits
 login_failed_attempts = defaultdict(list)  # ip -> [timestamps]
@@ -212,36 +215,22 @@ def init_db():
         """)
         db.commit()
 
-        # Initialize or load secrets
-        cur = db.cursor()
-        cur.execute("SELECT value FROM settings WHERE key = 'SECRET_KEY'")
-        row = cur.fetchone()
-        if not row:
-            secret_key = secrets.token_hex(32)
-            cur.execute("INSERT INTO settings (key, value) VALUES ('SECRET_KEY', ?)", (secret_key,))
-        else:
-            secret_key = row["value"]
-        app.secret_key = secret_key
+        # Initialize or load secrets atomically (never regenerated on restart/workers)
+        with db_lock:
+            cur = db.cursor()
+            cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('SECRET_KEY', ?)", (secrets.token_hex(32),))
+            cur.execute("SELECT value FROM settings WHERE key = 'SECRET_KEY'")
+            app.secret_key = cur.fetchone()["value"]
 
-        cur.execute("SELECT value FROM settings WHERE key = 'FERNET_KEY'")
-        row = cur.fetchone()
-        if not row:
-            fernet_key_bytes = Fernet.generate_key().decode()
-            cur.execute("INSERT INTO settings (key, value) VALUES ('FERNET_KEY', ?)", (fernet_key_bytes,))
-            FERNET_KEY = fernet_key_bytes
-        else:
-            FERNET_KEY = row["value"]
-        _fernet_instance = Fernet(FERNET_KEY.encode())
+            cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('FERNET_KEY', ?)", (Fernet.generate_key().decode(),))
+            cur.execute("SELECT value FROM settings WHERE key = 'FERNET_KEY'")
+            FERNET_KEY = cur.fetchone()["value"]
+            _fernet_instance = Fernet(FERNET_KEY.encode())
 
-        cur.execute("SELECT value FROM settings WHERE key = 'WEBHOOK_SECRET'")
-        row = cur.fetchone()
-        if not row:
-            webhook_secret = secrets.token_hex(24)
-            cur.execute("INSERT INTO settings (key, value) VALUES ('WEBHOOK_SECRET', ?)", (webhook_secret,))
-            WEBHOOK_SECRET = webhook_secret
-        else:
-            WEBHOOK_SECRET = row["value"]
-        db.commit()
+            cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('WEBHOOK_SECRET', ?)", (secrets.token_hex(24),))
+            cur.execute("SELECT value FROM settings WHERE key = 'WEBHOOK_SECRET'")
+            WEBHOOK_SECRET = cur.fetchone()["value"]
+            db.commit()
 
 def encrypt_secret(plain_text: str) -> str:
     global _fernet_instance
@@ -293,21 +282,41 @@ def verify_csrf_token(token: str) -> bool:
         return False
 
 def verify_csrf():
-    # 1. Origin / Referer validation if present
+    # 1. Origin / Referer validation when present (proxy-aware)
     origin = request.headers.get("Origin") or request.headers.get("Referer")
-    if origin:
+    if origin and origin != "null":
         try:
-            parsed_origin = urllib.parse.urlparse(origin).netloc.lower()
-            req_host = request.host.lower()
-            if parsed_origin and req_host and parsed_origin != req_host:
-                is_local = (parsed_origin.startswith("localhost") or parsed_origin.startswith("127.0.0.1")) and \
-                           (req_host.startswith("localhost") or req_host.startswith("127.0.0.1"))
-                if not is_local:
+            parsed_netloc = urllib.parse.urlparse(origin).netloc.lower()
+            parsed_host = parsed_netloc.split(":")[0]
+            if parsed_netloc:
+                allowed_hosts = set()
+                for raw_h in [
+                    request.host,
+                    request.headers.get("X-Forwarded-Host", ""),
+                    request.headers.get("X-Forwarded-Server", ""),
+                    urllib.parse.urlparse(BASE_URL).netloc if BASE_URL else ""
+                ]:
+                    for part in raw_h.split(","):
+                        h = part.strip().lower()
+                        if h:
+                            allowed_hosts.add(h)
+                            allowed_hosts.add(h.split(":")[0])
+
+                req_hostname = (request.host or "").lower().split(":")[0]
+                backend_is_local = req_hostname in ("localhost", "127.0.0.1", "0.0.0.0")
+                origin_is_local = parsed_host in ("localhost", "127.0.0.1", "0.0.0.0")
+
+                if (
+                    parsed_netloc not in allowed_hosts
+                    and parsed_host not in allowed_hosts
+                    and not (backend_is_local and origin_is_local)
+                    and not backend_is_local
+                ):
                     return False
         except Exception:
             return False
 
-    # 2. Extract token from Header X-CSRF-Token, Form, or JSON body
+    # 2. Extract stateless signed token from Header X-CSRF-Token, Form, or JSON body
     token = request.headers.get("X-CSRF-Token")
     if not token and request.form:
         token = request.form.get("csrf_token")
@@ -1126,7 +1135,7 @@ def api_public_order(order_id):
                 "success": False,
                 "error": {
                     "code": "NOT_CONFIGURED",
-                    "message": "Merchant is not configured or temporarily unavailable. Payments are currently paused."
+                    "message": "Merchant is not configured / temporarily unavailable"
                 }
             }), 503
         
@@ -1179,7 +1188,7 @@ def api_public_status(order_id):
                 "success": False,
                 "error": {
                     "code": "NOT_CONFIGURED",
-                    "message": "Merchant is not configured or temporarily unavailable."
+                    "message": "Merchant is not configured / temporarily unavailable"
                 }
             }), 503
 
@@ -1212,9 +1221,11 @@ def api_public_status(order_id):
 @app.route("/api/public/qr/<order_id>.png")
 def api_public_qr_png(order_id):
     with get_db() as db:
-        order = db.execute("SELECT payable_amount FROM orders WHERE id = ?", (order_id,)).fetchone()
+        order = db.execute("SELECT status, payable_amount FROM orders WHERE id = ?", (order_id,)).fetchone()
         if not order:
             return "Order not found", 404
+        if order["status"] == "pending" and not is_gateway_configured():
+            return "Merchant is not configured / temporarily unavailable", 503
         pay_data = generate_upi_payment_data(order_id, order["payable_amount"])
 
     resp = make_response(pay_data["qr_bytes"])
@@ -1236,7 +1247,7 @@ def api_v1_create_order():
             "success": False,
             "error": {
                 "code": "NOT_CONFIGURED",
-                "message": "Gateway is not configured. Connect your UPI ID and Gmail first."
+                "message": "Connect your UPI ID and Gmail first."
             }
         }), 409
 
@@ -1500,6 +1511,7 @@ def api_me():
 
     return jsonify({
         "admin_exists": admin_exists,
+        "setup_required": not admin_exists,
         "logged_in": admin_info is not None,
         "admin": admin_info,
         "is_configured": is_gateway_configured(),
@@ -1510,7 +1522,7 @@ def api_me():
 @require_admin
 def api_admin_profile():
     if not verify_csrf():
-        return jsonify({"success": False, "error": {"code": "CSRF_ERROR", "message": "Invalid CSRF token"}}), 403
+        return csrf_error_response()
 
     data = request.get_json(silent=True) or {}
     name = data.get("name", "").strip()
@@ -1543,36 +1555,53 @@ def api_admin_profile():
 @require_admin
 def api_admin_get_connection():
     with get_db() as db:
-        row = db.execute("SELECT upi_id, gmail, status, last_checked, last_error FROM connection WHERE id = 1").fetchone()
+        row = db.execute("SELECT upi_id, gmail, encrypted_app_password, status, last_checked, last_error FROM connection WHERE id = 1").fetchone()
         if not row:
             return jsonify({
                 "configured": False,
+                "connected": False,
+                "has_credentials": False,
                 "upi_id": "",
                 "gmail": "",
                 "status": "disconnected",
                 "last_checked": None,
-                "last_error": None
+                "last_error": None,
+                "has_password": False
             })
+        is_conn = (
+            bool(row["upi_id"])
+            and bool(row["gmail"])
+            and bool(row["encrypted_app_password"])
+            and row["status"] == "connected"
+        )
         return jsonify({
-            "configured": True,
+            "configured": is_conn,
+            "connected": is_conn,
+            "has_credentials": bool(row["upi_id"] and row["gmail"] and row["encrypted_app_password"]),
             "upi_id": row["upi_id"],
             "gmail": row["gmail"],
             "status": row["status"],
             "last_checked": row["last_checked"],
             "last_error": row["last_error"],
-            "has_password": True
+            "has_password": bool(row["encrypted_app_password"])
         })
 
 @app.route("/api/admin/connection", methods=["POST"])
 @require_admin
 def api_admin_save_connection():
     if not verify_csrf():
-        return jsonify({"success": False, "error": {"code": "CSRF_ERROR", "message": "Invalid CSRF token"}}), 403
+        return csrf_error_response()
 
     data = request.get_json(silent=True) or {}
     upi_id = data.get("upi_id", "").strip()
     gmail = data.get("gmail", "").strip().lower()
-    app_password = data.get("app_password", "").strip().replace(" ", "")
+    app_password = re.sub(r"\s+", "", data.get("app_password", "").strip())
+
+    if not app_password:
+        with get_db() as db:
+            existing = db.execute("SELECT encrypted_app_password FROM connection WHERE id = 1").fetchone()
+            if existing and existing["encrypted_app_password"]:
+                app_password = decrypt_secret(existing["encrypted_app_password"])
 
     if not upi_id or not gmail or not app_password:
         return jsonify({"success": False, "error": {"code": "MISSING_FIELDS", "message": "UPI ID, Gmail address, and App Password are required"}}), 400
@@ -1583,6 +1612,11 @@ def api_admin_save_connection():
         test_mail.login(gmail, app_password)
         test_mail.logout()
     except Exception as e:
+        with get_db() as db:
+            existing = db.execute("SELECT id FROM connection WHERE id = 1").fetchone()
+            if existing:
+                db.execute("UPDATE connection SET status = 'disconnected', last_error = ?, last_checked = ? WHERE id = 1", (str(e), iso_now()))
+                db.commit()
         return jsonify({
             "success": False,
             "error": {
@@ -1612,7 +1646,7 @@ def api_admin_save_connection():
 @require_admin
 def api_admin_disconnect():
     if not verify_csrf():
-        return jsonify({"success": False, "error": {"code": "CSRF_ERROR", "message": "Invalid CSRF token"}}), 403
+        return csrf_error_response()
 
     with get_db() as db:
         db.execute("UPDATE connection SET status = 'disconnected', last_error = 'Manually disconnected' WHERE id = 1")
@@ -1720,7 +1754,16 @@ def api_admin_get_orders():
 @require_admin
 def api_admin_create_payment_link():
     if not verify_csrf():
-        return jsonify({"success": False, "error": {"code": "CSRF_ERROR", "message": "Invalid CSRF token"}}), 403
+        return csrf_error_response()
+
+    if not is_gateway_configured():
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "NOT_CONFIGURED",
+                "message": "Connect your UPI ID and Gmail first."
+            }
+        }), 409
 
     data = request.get_json(silent=True) or {}
     try:
@@ -1771,7 +1814,7 @@ def api_admin_create_payment_link():
 @require_admin
 def api_admin_cancel_order(order_id):
     if not verify_csrf():
-        return jsonify({"success": False, "error": {"code": "CSRF_ERROR", "message": "Invalid CSRF token"}}), 403
+        return csrf_error_response()
 
     with get_db() as db:
         order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
@@ -1792,7 +1835,7 @@ def api_admin_cancel_order(order_id):
 @require_admin
 def api_admin_delete_order(order_id):
     if not verify_csrf():
-        return jsonify({"success": False, "error": {"code": "CSRF_ERROR", "message": "Invalid CSRF token"}}), 403
+        return csrf_error_response()
 
     with get_db() as db:
         db.execute("DELETE FROM orders WHERE id = ?", (order_id,))
@@ -1837,7 +1880,16 @@ def api_admin_list_keys():
 @require_admin
 def api_admin_create_key():
     if not verify_csrf():
-        return jsonify({"success": False, "error": {"code": "CSRF_ERROR", "message": "Invalid CSRF token"}}), 403
+        return csrf_error_response()
+
+    if not is_gateway_configured():
+        return jsonify({
+            "success": False,
+            "error": {
+                "code": "NOT_CONFIGURED",
+                "message": "Connect your UPI ID and Gmail first."
+            }
+        }), 409
 
     data = request.get_json(silent=True) or {}
     key_name = data.get("name", "").strip() or "Default Key"
@@ -1872,7 +1924,7 @@ def api_admin_create_key():
 @require_admin
 def api_admin_revoke_key(key_id):
     if not verify_csrf():
-        return jsonify({"success": False, "error": {"code": "CSRF_ERROR", "message": "Invalid CSRF token"}}), 403
+        return csrf_error_response()
 
     with get_db() as db:
         db.execute("UPDATE api_keys SET revoked = 1 WHERE id = ?", (key_id,))
@@ -1889,7 +1941,7 @@ def api_admin_get_webhook_secret():
 def api_admin_regenerate_webhook_secret():
     global WEBHOOK_SECRET
     if not verify_csrf():
-        return jsonify({"success": False, "error": {"code": "CSRF_ERROR", "message": "Invalid CSRF token"}}), 403
+        return csrf_error_response()
 
     new_secret = secrets.token_hex(24)
     with get_db() as db:
@@ -1934,7 +1986,7 @@ def api_admin_simulate_email():
     to test matching, status transitions, QR animations, and webhooks live.
     """
     if not verify_csrf():
-        return jsonify({"success": False, "error": {"code": "CSRF_ERROR", "message": "Invalid CSRF token"}}), 403
+        return csrf_error_response()
 
     data = request.get_json(silent=True) or {}
     email_text = data.get("email_text", "").strip()

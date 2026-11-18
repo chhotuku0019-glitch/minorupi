@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>MinorUPI — Admin Dashboard</title>
   <meta name="description" content="Private MinorUPI payment gateway administration panel.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -29,11 +29,11 @@
       --primary-hover: #1e40af;
       --primary-glow: rgba(29, 78, 216, 0.2);
       --success: #10b981;
-      --success-bg: rgba(16, 185, 129, 0.1);
-      --warning: #f59e0b;
-      --warning-bg: rgba(245, 158, 11, 0.1);
+      --success-bg: rgba(16, 185, 129, 0.12);
+      --warning: #d97706;
+      --warning-bg: rgba(245, 158, 11, 0.14);
       --danger: #ef4444;
-      --danger-bg: rgba(239, 68, 68, 0.1);
+      --danger-bg: rgba(239, 68, 68, 0.12);
       --radius-sm: 10px;
       --radius-md: 16px;
       --radius-lg: 22px;
@@ -44,7 +44,6 @@
       --shadow-drawer: 10px 0 30px rgba(15, 23, 42, 0.15);
     }
 
-    /* Dark theme support */
     html.dark {
       --bg-page: #090d16;
       --bg-surface: #111827;
@@ -63,7 +62,21 @@
       --shadow-drawer: 10px 0 30px rgba(0, 0, 0, 0.5);
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    img, svg, canvas, video {
+      max-width: 100%;
+    }
+
     body {
       background: var(--bg-page);
       color: var(--text-main);
@@ -78,7 +91,7 @@
     }
 
     /* ==========================================================================
-       HAMBURGER DRAWER & OVERLAY (Requirement 2)
+       HAMBURGER DRAWER & OVERLAY
        ========================================================================== */
     .drawer-overlay {
       position: fixed;
@@ -100,14 +113,18 @@
       top: 0;
       left: 0;
       bottom: 0;
-      width: 280px;
-      max-width: 85vw;
+      height: 100vh;
+      height: 100dvh;
+      width: min(280px, 85vw);
       background: var(--bg-drawer);
       border-right: 1px solid var(--border-color);
       box-shadow: var(--shadow-drawer);
       z-index: 100;
       display: flex;
       flex-direction: column;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
       transform: translateX(-100%);
       transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
       user-select: none;
@@ -117,16 +134,18 @@
     }
 
     .drawer-header {
-      padding: 20px 22px;
+      padding: 18px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 10px;
       border-bottom: 1px solid var(--border-color);
     }
     .drawer-brand {
       display: flex;
       align-items: center;
       gap: 10px;
+      min-width: 0;
     }
     .brand-icon {
       width: 36px;
@@ -139,6 +158,7 @@
       color: #ffffff;
       font-weight: 800;
       font-size: 1.15rem;
+      flex-shrink: 0;
       box-shadow: 0 4px 10px rgba(29, 78, 216, 0.3);
     }
     .brand-name {
@@ -159,6 +179,7 @@
     .drawer-close-btn {
       width: 36px;
       height: 36px;
+      flex-shrink: 0;
       background: transparent;
       border: none;
       border-radius: 8px;
@@ -175,7 +196,7 @@
     }
 
     .drawer-nav {
-      padding: 16px 14px;
+      padding: 14px 12px;
       flex: 1;
       overflow-y: auto;
       display: flex;
@@ -194,6 +215,7 @@
       cursor: pointer;
       transition: all 0.15s ease;
       text-decoration: none !important;
+      min-width: 0;
     }
     .nav-link svg {
       width: 19px;
@@ -215,7 +237,7 @@
     }
 
     .drawer-footer {
-      padding: 16px 20px;
+      padding: 16px 18px;
       border-top: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
@@ -225,10 +247,12 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      min-width: 0;
     }
     .user-avatar {
       width: 34px;
       height: 34px;
+      flex-shrink: 0;
       background: #e2e8f0;
       color: #1e293b;
       border-radius: 50%;
@@ -244,6 +268,7 @@
     }
     .user-info-text {
       flex: 1;
+      min-width: 0;
       overflow: hidden;
     }
     .user-name {
@@ -263,16 +288,17 @@
     }
 
     /* ==========================================================================
-       TOP BAR (Requirement 2: Hamburger on left, title in center, status on right)
+       TOP BAR (Mobile-safe from 320px upward)
        ========================================================================== */
     .topbar {
-      height: 66px;
+      min-height: calc(64px + env(safe-area-inset-top));
       border-bottom: 1px solid var(--border-color);
       background: var(--bg-surface);
-      padding: 0 24px;
+      padding: env(safe-area-inset-top) max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 10px;
       position: sticky;
       top: 0;
       z-index: 40;
@@ -281,11 +307,14 @@
     .topbar-left {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 10px;
+      min-width: 0;
+      flex: 1 1 auto;
     }
     .hamburger-btn {
-      width: 44px;
-      height: 44px;
+      width: 40px;
+      height: 40px;
+      flex-shrink: 0;
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -302,7 +331,7 @@
       background: var(--bg-card-inner);
     }
     .hamburger-bar {
-      width: 20px;
+      width: 18px;
       height: 2px;
       background-color: var(--text-main);
       border-radius: 2px;
@@ -322,46 +351,56 @@
     .topbar-title-group {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
+      min-width: 0;
+      overflow: hidden;
     }
     .topbar-brand {
-      font-size: 1.15rem;
+      font-size: 1.05rem;
       font-weight: 800;
       color: var(--text-main);
       display: flex;
       align-items: baseline;
+      flex-shrink: 0;
     }
     .topbar-brand span {
       color: #1d4ed8;
     }
     .topbar-divider {
       color: var(--border-color);
-      font-size: 1.2rem;
+      font-size: 1.1rem;
+      flex-shrink: 0;
     }
     .topbar-page-name {
-      font-size: 1rem;
+      font-size: 0.95rem;
       font-weight: 700;
       color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
     }
 
     .topbar-right {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
+      flex-shrink: 0;
     }
 
-    /* Connection status dot */
     .connection-status-pill {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      padding: 7px 14px;
+      gap: 7px;
+      padding: 6px 12px;
       border-radius: 9999px;
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       font-weight: 700;
       text-decoration: none !important;
       border: 1px solid transparent;
       cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
     .status-connected {
       background: var(--success-bg);
@@ -378,6 +417,7 @@
       height: 8px;
       border-radius: 50%;
       background: currentColor;
+      flex-shrink: 0;
     }
     .status-connected .status-dot {
       animation: pulseGreen 2s infinite;
@@ -388,8 +428,9 @@
     }
 
     .theme-toggle-btn {
-      width: 40px;
-      height: 40px;
+      width: 38px;
+      height: 38px;
+      flex-shrink: 0;
       border-radius: 10px;
       border: 1px solid var(--border-color);
       background: transparent;
@@ -406,19 +447,47 @@
     }
 
     /* ==========================================================================
-       MAIN CONTENT CONTAINER
+       MAIN CONTENT CONTAINER & SETUP BANNER
        ========================================================================== */
     .main-viewport {
       flex: 1;
-      padding: 28px 24px 60px;
+      padding: 20px max(16px, env(safe-area-inset-right)) max(48px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
       max-width: 1350px;
       width: 100%;
+      min-width: 0;
       margin: 0 auto;
+    }
+
+    .setup-banner {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      background: var(--warning-bg);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      color: var(--text-main);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      margin-bottom: 20px;
+    }
+    .setup-banner.visible {
+      display: flex;
+    }
+    .setup-banner-text {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      flex: 1 1 220px;
+      min-width: 0;
     }
 
     /* Tab views */
     .tab-content {
       display: none;
+      min-width: 0;
     }
     .tab-content.active {
       display: block;
@@ -431,67 +500,93 @@
 
     /* Typography & Headers */
     .page-header {
-      margin-bottom: 24px;
+      margin-bottom: 20px;
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
       flex-wrap: wrap;
-      gap: 14px;
+      gap: 12px;
+      min-width: 0;
+    }
+    .page-header > div {
+      min-width: 0;
+      flex: 1 1 220px;
     }
     .page-header h1 {
-      font-size: 1.65rem;
+      font-size: clamp(1.35rem, 3.5vw, 1.65rem);
       font-weight: 800;
       color: var(--text-main);
       letter-spacing: -0.3px;
     }
     .page-header p {
       color: var(--text-muted);
-      font-size: 0.92rem;
+      font-size: 0.9rem;
       margin-top: 4px;
+    }
+    .page-header-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .action-subtext {
+      font-size: 0.78rem;
+      color: var(--warning);
+      font-weight: 600;
+      margin-top: 6px;
+      display: none;
+    }
+    .action-subtext.visible {
+      display: block;
     }
 
     /* ==========================================================================
-       CARDS & STATS GRID (Matching reference 63ff1bbc61b8ab34c56c49ebb8c442cd)
+       CARDS & STATS GRID
        ========================================================================== */
     .card {
       background: var(--bg-surface);
       border: 1px solid var(--border-color);
       border-radius: var(--radius-md);
-      padding: 24px;
+      padding: clamp(14px, 3vw, 24px);
       box-shadow: var(--shadow-card);
-      margin-bottom: 24px;
+      margin-bottom: 20px;
+      min-width: 0;
       transition: background-color 0.2s ease, border-color 0.2s ease;
     }
     .card-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 18px;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 16px;
+      min-width: 0;
     }
     .card-title {
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       font-weight: 700;
       color: var(--text-main);
     }
 
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
     }
     .stat-card {
       background: var(--bg-surface);
       border: 1px solid var(--border-color);
       border-radius: var(--radius-md);
-      padding: 20px;
+      padding: 18px;
       box-shadow: var(--shadow-card);
       display: flex;
       flex-direction: column;
       position: relative;
+      min-width: 0;
     }
     .stat-label {
-      font-size: 0.75rem;
+      font-size: 0.73rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.8px;
@@ -499,7 +594,7 @@
       margin-bottom: 6px;
     }
     .stat-value {
-      font-size: 2rem;
+      font-size: clamp(1.35rem, 3.8vw, 1.9rem);
       font-weight: 800;
       color: var(--text-main);
       font-family: var(--font-mono);
@@ -507,9 +602,10 @@
       display: flex;
       align-items: baseline;
       gap: 4px;
+      overflow-wrap: anywhere;
     }
     .stat-subtext {
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       color: var(--text-muted);
       margin-top: 6px;
     }
@@ -519,17 +615,18 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 7px;
       font-weight: 600;
-      font-size: 0.9rem;
-      min-height: 42px;
-      padding: 10px 18px;
+      font-size: 0.88rem;
+      min-height: 40px;
+      padding: 9px 16px;
       border-radius: var(--radius-sm);
       border: 1px solid transparent;
       cursor: pointer;
       transition: all 0.15s ease;
       text-decoration: none !important;
       font-family: inherit;
+      max-width: 100%;
     }
     .btn-primary {
       background: var(--primary);
@@ -558,14 +655,22 @@
     }
     .btn-sm {
       min-height: 34px;
-      padding: 6px 12px;
-      font-size: 0.82rem;
+      padding: 6px 11px;
+      font-size: 0.8rem;
+    }
+    .btn.is-disabled {
+      opacity: 0.5;
+      filter: grayscale(70%);
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none !important;
     }
 
     /* Form styling */
     .form-group {
-      margin-bottom: 18px;
+      margin-bottom: 16px;
       text-align: left;
+      min-width: 0;
     }
     .form-group label {
       display: block;
@@ -578,13 +683,14 @@
     }
     .form-control {
       width: 100%;
+      min-width: 0;
       min-height: 44px;
-      padding: 11px 14px;
+      padding: 10px 13px;
       background: var(--bg-card-inner);
       border: 1.5px solid var(--border-color);
       border-radius: var(--radius-sm);
       color: var(--text-main);
-      font-size: 16px; /* Prevents auto-zoom on mobile */
+      font-size: 16px;
       font-family: inherit;
       outline: none;
       transition: border-color 0.15s;
@@ -594,7 +700,17 @@
       box-shadow: 0 0 0 3px var(--primary-glow);
     }
 
-    /* Tables & Responsive Design */
+    .inline-input-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      max-width: 540px;
+    }
+    .inline-input-row .form-control {
+      flex: 1 1 200px;
+    }
+
+    /* Tables & Mobile Stacked Cards */
     .table-container {
       width: 100%;
       overflow-x: auto;
@@ -605,29 +721,38 @@
     .data-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       text-align: left;
     }
     .data-table th {
       background: var(--bg-card-inner);
-      padding: 12px 16px;
-      font-size: 0.75rem;
+      padding: 12px 14px;
+      font-size: 0.74rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.6px;
       color: var(--text-muted);
       border-bottom: 1px solid var(--border-color);
+      white-space: nowrap;
     }
     .data-table td {
-      padding: 14px 16px;
+      padding: 12px 14px;
       border-bottom: 1px solid var(--border-color);
       color: var(--text-main);
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      vertical-align: middle;
     }
     .data-table tr:last-child td {
       border-bottom: none;
     }
     .data-table tr:hover td {
       background: var(--bg-card-inner);
+    }
+    .table-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
     }
 
     .badge {
@@ -636,20 +761,21 @@
       gap: 6px;
       padding: 4px 10px;
       border-radius: 9999px;
-      font-size: 0.74rem;
+      font-size: 0.72rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      white-space: nowrap;
     }
     .badge-paid { background: var(--success-bg); color: var(--success); }
-    .badge-pending { background: rgba(29, 78, 216, 0.1); color: #1d4ed8; }
-    .badge-expired { background: rgba(148, 163, 184, 0.12); color: var(--text-muted); }
+    .badge-pending { background: rgba(29, 78, 216, 0.12); color: #1d4ed8; }
+    .badge-expired { background: rgba(148, 163, 184, 0.14); color: var(--text-muted); }
     .badge-cancelled { background: var(--warning-bg); color: var(--warning); }
     .badge-failed { background: var(--danger-bg); color: var(--danger); }
 
-    /* Empty states (Clean SVG graphic + friendly message) */
+    /* Empty states */
     .empty-state-box {
-      padding: 48px 24px;
+      padding: 40px 20px;
       text-align: center;
       display: flex;
       flex-direction: column;
@@ -657,25 +783,25 @@
       justify-content: center;
     }
     .empty-state-icon {
-      width: 68px;
-      height: 68px;
-      margin-bottom: 16px;
+      width: 60px;
+      height: 60px;
+      margin-bottom: 14px;
       color: var(--text-dim);
     }
     .empty-state-title {
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       font-weight: 700;
       color: var(--text-main);
       margin-bottom: 6px;
     }
     .empty-state-text {
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       color: var(--text-muted);
       max-width: 420px;
-      margin-bottom: 18px;
+      margin-bottom: 16px;
     }
 
-    /* Modal */
+    /* Modals */
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -685,56 +811,76 @@
       display: none;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
     }
     .modal-backdrop.active {
       display: flex;
     }
     .modal-box {
-      width: 100%;
-      max-width: 480px;
+      width: min(100% - 24px, 480px);
+      max-height: calc(100vh - 24px);
+      max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+      overflow-y: auto;
       background: var(--bg-surface);
       border: 1px solid var(--border-color);
       border-radius: var(--radius-lg);
-      padding: 28px;
+      padding: 20px;
       box-shadow: 0 20px 40px rgba(0,0,0,0.25);
+      display: flex;
+      flex-direction: column;
     }
     .modal-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 16px;
+      gap: 10px;
+      margin-bottom: 14px;
     }
     .modal-title {
-      font-size: 1.25rem;
+      font-size: 1.15rem;
       font-weight: 800;
       color: var(--text-main);
+    }
+    .modal-footer {
+      position: sticky;
+      bottom: -20px;
+      background: var(--bg-surface);
+      padding: 12px 0 2px;
+      margin-top: 16px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
 
     /* Toast system */
     #toast-container {
       position: fixed;
-      top: 20px;
-      right: 20px;
+      top: max(12px, env(safe-area-inset-top));
+      right: max(12px, env(safe-area-inset-right));
       z-index: 9999;
       display: flex;
       flex-direction: column;
       gap: 10px;
       pointer-events: none;
+      max-width: calc(100vw - 24px);
     }
     .toast {
       pointer-events: auto;
-      min-width: 280px;
-      max-width: 380px;
-      padding: 13px 18px;
+      min-width: 0;
+      max-width: calc(100vw - 24px);
+      width: max-content;
+      padding: 12px 16px;
       border-radius: 12px;
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       font-weight: 600;
       color: #ffffff;
       box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25);
       display: flex;
       align-items: center;
       gap: 10px;
+      overflow-wrap: anywhere;
       animation: toastIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       transition: opacity 0.2s ease, transform 0.2s ease;
     }
@@ -746,13 +892,127 @@
       to { transform: translateX(0); opacity: 1; }
     }
 
-    /* Responsive */
-    @media (max-width: 768px) {
-      .topbar { padding: 0 16px; }
-      .main-viewport { padding: 20px 14px 60px; }
-      .stats-grid { grid-template-columns: 1fr; }
-      .card { padding: 18px; }
-      .topbar-brand span.hide-mobile { display: none; }
+    /* ==========================================================================
+       RESPONSIVE BREAKPOINTS (320px, 360px, 480px, 640px, 768px)
+       ========================================================================== */
+    @media (max-width: 639px) {
+      .page-header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .page-header > .btn,
+      .page-header-actions {
+        width: 100%;
+      }
+      .page-header-actions > .btn,
+      .page-header-actions > select {
+        flex: 1 1 140px;
+        width: 100%;
+      }
+      .setup-banner .btn {
+        width: 100%;
+      }
+
+      /* Stacked card table layout on mobile (<640px) — zero horizontal scrolling */
+      .table-container {
+        overflow-x: visible;
+        border: none;
+        background: transparent;
+      }
+      .data-table,
+      .data-table tbody,
+      .data-table tr,
+      .data-table td {
+        display: block;
+        width: 100%;
+      }
+      .data-table thead {
+        display: none;
+      }
+      .data-table tr {
+        background: var(--bg-card-inner);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-sm);
+        padding: 10px 12px;
+        margin-bottom: 12px;
+      }
+      .data-table tr:last-child {
+        margin-bottom: 0;
+      }
+      .data-table td {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 7px 0;
+        border-bottom: 1px dashed var(--border-color);
+        text-align: right;
+      }
+      .data-table td:last-child {
+        border-bottom: none;
+      }
+      .data-table td::before {
+        content: attr(data-label);
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        color: var(--text-muted);
+        text-align: left;
+        flex-shrink: 0;
+      }
+      .data-table td > * {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+      .table-actions {
+        justify-content: flex-end;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .topbar-brand,
+      .topbar-divider {
+        display: none;
+      }
+      .main-viewport {
+        padding: 16px 12px 48px;
+      }
+    }
+
+    @media (max-width: 479px) {
+      .hide-xs {
+        display: none;
+      }
+      .topbar-action-link {
+        padding: 0 11px;
+        min-height: 36px;
+        min-width: 36px;
+      }
+      .modal-footer {
+        flex-direction: column-reverse;
+      }
+      .modal-footer .btn {
+        width: 100%;
+      }
+    }
+
+    @media (max-width: 419px) {
+      #topbar-conn-text {
+        display: none;
+      }
+      .connection-status-pill {
+        padding: 9px;
+      }
+      .topbar {
+        padding-left: 10px;
+        padding-right: 10px;
+        gap: 6px;
+      }
+      .topbar-right {
+        gap: 6px;
+      }
     }
   </style>
 </head>
@@ -764,7 +1024,7 @@
   <!-- Drawer Dark Backdrop Overlay -->
   <div id="drawer-overlay" class="drawer-overlay" onclick="toggleDrawer(false)"></div>
 
-  <!-- Slide-In Drawer from the Left (Requirement 2) -->
+  <!-- Slide-In Drawer from the Left -->
   <aside id="nav-drawer" class="nav-drawer">
     <div class="drawer-header">
       <div class="drawer-brand">
@@ -783,7 +1043,6 @@
     </div>
 
     <nav class="drawer-nav">
-      <!-- 1. Dashboard -->
       <a class="nav-link active" data-tab="dashboard" onclick="switchTab('dashboard')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <rect x="3" y="3" width="7" height="7"></rect>
@@ -794,7 +1053,6 @@
         <span>Dashboard</span>
       </a>
 
-      <!-- 2. Connect -->
       <a class="nav-link" data-tab="connect" onclick="switchTab('connect')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
@@ -803,7 +1061,6 @@
         <span>Connect FamApp</span>
       </a>
 
-      <!-- 3. Payment Links -->
       <a class="nav-link" data-tab="links" onclick="switchTab('links')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <rect x="2" y="4" width="20" height="16" rx="2"></rect>
@@ -812,7 +1069,6 @@
         <span>Payment Links</span>
       </a>
 
-      <!-- 4. Transactions -->
       <a class="nav-link" data-tab="transactions" onclick="switchTab('transactions')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <polyline points="17 1 21 5 17 9"></polyline>
@@ -823,7 +1079,6 @@
         <span>Transactions</span>
       </a>
 
-      <!-- 5. API -->
       <a class="nav-link" data-tab="api" onclick="switchTab('api')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <polyline points="16 18 22 12 16 6"></polyline>
@@ -832,7 +1087,6 @@
         <span>API & Webhooks</span>
       </a>
 
-      <!-- 6. Settings -->
       <a class="nav-link" data-tab="settings" onclick="switchTab('settings')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <circle cx="12" cy="12" r="3"></circle>
@@ -842,7 +1096,6 @@
       </a>
     </nav>
 
-    <!-- Drawer Footer with Admin Profile and Logout -->
     <div class="drawer-footer">
       <div class="user-profile-badge">
         <div id="drawer-user-avatar" class="user-avatar">A</div>
@@ -867,14 +1120,12 @@
        ========================================================================== -->
   <header class="topbar">
     <div class="topbar-left">
-      <!-- Animated Hamburger Button (Top-Left) -->
       <button id="btn-hamburger" class="hamburger-btn" onclick="toggleDrawer()" aria-label="Toggle Navigation Menu">
         <span class="hamburger-bar"></span>
         <span class="hamburger-bar"></span>
         <span class="hamburger-bar"></span>
       </button>
 
-      <!-- Brand and Section Name -->
       <div class="topbar-title-group">
         <div class="topbar-brand">Minor<span>UPI</span>™</div>
         <span class="topbar-divider">/</span>
@@ -883,19 +1134,16 @@
     </div>
 
     <div class="topbar-right">
-      <!-- Connection Status Dot -->
-      <a id="topbar-conn-badge" class="connection-status-pill status-disconnected" onclick="switchTab('connect')" title="Click to configure FamApp email connection">
+      <a id="topbar-conn-badge" class="connection-status-pill status-disconnected" onclick="switchTab('connect')" title="Gateway connection status — click to configure">
         <span class="status-dot"></span>
         <span id="topbar-conn-text">Disconnected</span>
       </a>
 
-      <!-- Quick Action: Create Link -->
-      <button class="btn btn-primary btn-sm" onclick="switchTab('links')">
-        <span>+</span> Link
+      <button id="btn-topbar-create-link" class="btn btn-primary btn-sm topbar-action-link" onclick="handleTopCreateLink()" title="Create a new payment link">
+        <span>+</span><span class="hide-xs"> Link</span>
       </button>
 
-      <!-- Theme Toggle -->
-      <button class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+      <button class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle Dark/Light Mode" aria-label="Toggle Dark/Light Mode">
         <svg id="theme-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="5"></circle>
           <line x1="12" y1="1" x2="12" y2="3"></line>
@@ -912,9 +1160,20 @@
   </header>
 
   <!-- ==========================================================================
-       MAIN VIEWPORT TABS
+       MAIN VIEWPORT
        ========================================================================== -->
   <main class="main-viewport">
+
+    <!-- Prominent Banner When Not Configured -->
+    <div id="setup-incomplete-banner" class="setup-banner" role="alert">
+      <div class="setup-banner-text">
+        <span style="font-size: 1.15rem; line-height: 1.2;">⚠</span>
+        <div>
+          <span id="setup-banner-msg">Setup incomplete: connect your UPI ID and Gmail to start accepting payments</span>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="switchTab('connect')">Go to Connect</button>
+    </div>
 
     <!-- 1. TAB: DASHBOARD -->
     <section id="tab-dashboard" class="tab-content active">
@@ -923,13 +1182,12 @@
           <h1>Overview</h1>
           <p>Real-time telemetry and settlement summary.</p>
         </div>
-        <div style="display: flex; gap: 10px;">
+        <div class="page-header-actions">
           <button class="btn btn-secondary btn-sm" onclick="loadDashboard()">↻ Refresh</button>
-          <a href="/docs" target="_blank" class="btn btn-secondary btn-sm">API Docs ↗</a>
+          <a href="/docs" class="btn btn-secondary btn-sm">API Docs ↗</a>
         </div>
       </div>
 
-      <!-- Stats Grid -->
       <div class="stats-grid">
         <div class="stat-card">
           <span class="stat-label">Total Volume</span>
@@ -955,13 +1213,12 @@
         </div>
       </div>
 
-      <!-- 30-Day Activity Chart -->
       <div class="card">
         <div class="card-header">
           <div class="card-title">Daily Payment Volume (30 Days)</div>
           <div style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Direct UPI Settlement</div>
         </div>
-        <div id="chart-empty-container" class="empty-state-box" style="display: none; padding: 30px;">
+        <div id="chart-empty-container" class="empty-state-box" style="display: none; padding: 24px;">
           <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
             <line x1="12" y1="20" x2="12" y2="10"></line>
             <line x1="18" y1="20" x2="18" y2="4"></line>
@@ -970,12 +1227,11 @@
           <div class="empty-state-title">No Transaction Activity Yet</div>
           <p class="empty-state-text">Once customers complete payments through your payment links or API, daily volume trends will render here.</p>
         </div>
-        <div style="height: 260px; position: relative;">
+        <div style="height: 240px; position: relative;">
           <canvas id="paymentsChart"></canvas>
         </div>
       </div>
 
-      <!-- Recent Transactions -->
       <div class="card">
         <div class="card-header">
           <div class="card-title">Recent Transactions</div>
@@ -992,9 +1248,7 @@
                 <th>Created</th>
               </tr>
             </thead>
-            <tbody id="recent-transactions-tbody">
-              <!-- Rendered via JS -->
-            </tbody>
+            <tbody id="recent-transactions-tbody"></tbody>
           </table>
           <div id="recent-empty-state" class="empty-state-box" style="display: none;">
             <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -1042,7 +1296,7 @@
             <span style="font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; display: block;">Generate this from your Google Account &gt; Security &gt; 2-Step Verification &gt; App Passwords. Stored encrypted with AES-256 Fernet.</span>
           </div>
 
-          <div style="display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap;">
+          <div style="display: flex; gap: 12px; margin-top: 22px; flex-wrap: wrap;">
             <button type="submit" id="btn-save-conn" class="btn btn-primary">
               Verify & Save Connection
             </button>
@@ -1053,14 +1307,14 @@
         </form>
 
         <div id="conn-status-card" style="margin-top: 24px; padding: 16px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); display: none;">
-          <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
             <div>
-              <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Worker Status</div>
+              <div style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Worker Status</div>
               <div id="conn-last-checked" style="font-size: 0.85rem; color: var(--text-main); font-weight: 600; margin-top: 2px;">Last checked: Never</div>
             </div>
-            <span id="conn-status-badge" class="badge">Checking</span>
+            <span id="conn-status-badge" class="badge badge-expired">Disconnected</span>
           </div>
-          <div id="conn-last-error" style="font-size: 0.8rem; color: #ef4444; margin-top: 8px; display: none;"></div>
+          <div id="conn-last-error" style="font-size: 0.82rem; color: #ef4444; margin-top: 8px; display: none; overflow-wrap: anywhere;"></div>
         </div>
       </div>
     </section>
@@ -1071,8 +1325,11 @@
         <div>
           <h1>Payment Links</h1>
           <p>Generate shareable UPI checkout links with dynamic paise verification.</p>
+          <div id="links-gated-subtext" class="action-subtext">Connect your UPI ID and Gmail first to create payment links.</div>
         </div>
-        <button class="btn btn-primary" onclick="openCreateLinkModal()">+ Create Payment Link</button>
+        <div class="page-header-actions">
+          <button id="btn-create-link" class="btn btn-primary" onclick="openCreateLinkModal()" title="Create Payment Link">+ Create Payment Link</button>
+        </div>
       </div>
 
       <div class="card">
@@ -1088,9 +1345,7 @@
                 <th>Actions</th>
               </tr>
             </thead>
-            <tbody id="links-table-tbody">
-              <!-- Rendered via JS -->
-            </tbody>
+            <tbody id="links-table-tbody"></tbody>
           </table>
           <div id="links-empty-state" class="empty-state-box" style="display: none;">
             <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -1099,7 +1354,7 @@
             </svg>
             <div class="empty-state-title">No Payment Links Yet</div>
             <p class="empty-state-text">Create your first payment link to share with customers via WhatsApp, Telegram, or email.</p>
-            <button class="btn btn-primary btn-sm" onclick="openCreateLinkModal()">+ Create Link</button>
+            <button id="btn-empty-create-link" class="btn btn-primary btn-sm" onclick="openCreateLinkModal()">+ Create Link</button>
           </div>
         </div>
       </div>
@@ -1112,8 +1367,8 @@
           <h1>All Transactions</h1>
           <p>Audit trail of all orders, settlements, and verification logs.</p>
         </div>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-          <select id="filter-status" class="form-control" style="width: auto; min-width: 130px; min-height: 38px; padding: 6px 12px;" onchange="loadTransactions()">
+        <div class="page-header-actions">
+          <select id="filter-status" class="form-control" style="width: auto; min-width: 140px; min-height: 38px; padding: 6px 12px;" onchange="loadTransactions()">
             <option value="">All Statuses</option>
             <option value="paid">Paid</option>
             <option value="pending">Pending</option>
@@ -1140,9 +1395,7 @@
                 <th>Action</th>
               </tr>
             </thead>
-            <tbody id="transactions-table-tbody">
-              <!-- Rendered via JS -->
-            </tbody>
+            <tbody id="transactions-table-tbody"></tbody>
           </table>
           <div id="transactions-empty-state" class="empty-state-box" style="display: none;">
             <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -1157,8 +1410,7 @@
         </div>
       </div>
 
-      <!-- Unmatched Payments Box -->
-      <div class="card" style="margin-top: 28px;">
+      <div class="card" style="margin-top: 24px;">
         <div class="card-header">
           <div>
             <div class="card-title">Unmatched Payments Queue</div>
@@ -1177,9 +1429,7 @@
                 <th>Reason</th>
               </tr>
             </thead>
-            <tbody id="unmatched-table-tbody">
-              <!-- Rendered via JS -->
-            </tbody>
+            <tbody id="unmatched-table-tbody"></tbody>
           </table>
           <div id="unmatched-empty-state" class="empty-state-box" style="display: none;">
             <svg class="empty-state-icon" style="color: #10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1199,11 +1449,13 @@
         <div>
           <h1>API Keys & Webhooks</h1>
           <p>Integrate MinorUPI directly into your website, SaaS, or WooCommerce store.</p>
+          <div id="keys-gated-subtext" class="action-subtext">Connect your UPI ID and Gmail first to generate API keys.</div>
         </div>
-        <button class="btn btn-primary" onclick="openCreateApiKeyModal()">+ Generate API Key</button>
+        <div class="page-header-actions">
+          <button id="btn-create-key" class="btn btn-primary" onclick="openCreateApiKeyModal()" title="Generate API Key">+ Generate API Key</button>
+        </div>
       </div>
 
-      <!-- API Keys Table -->
       <div class="card">
         <div class="card-header">
           <div class="card-title">Active API Keys</div>
@@ -1219,9 +1471,7 @@
                 <th>Action</th>
               </tr>
             </thead>
-            <tbody id="api-keys-tbody">
-              <!-- Rendered via JS -->
-            </tbody>
+            <tbody id="api-keys-tbody"></tbody>
           </table>
           <div id="keys-empty-state" class="empty-state-box" style="display: none;">
             <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -1229,25 +1479,23 @@
             </svg>
             <div class="empty-state-title">No API Keys Generated</div>
             <p class="empty-state-text">Generate your first API key to connect your application backend with MinorUPI.</p>
-            <button class="btn btn-primary btn-sm" onclick="openCreateApiKeyModal()">+ Generate Key</button>
+            <button id="btn-empty-create-key" class="btn btn-primary btn-sm" onclick="openCreateApiKeyModal()">+ Generate Key</button>
           </div>
         </div>
       </div>
 
-      <!-- Webhook Secret Card -->
       <div class="card">
         <div class="card-header">
           <div class="card-title">Webhook Signing Secret</div>
           <button class="btn btn-danger btn-sm" onclick="confirmRegenerateWebhookSecret()">Regenerate Secret</button>
         </div>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Used to verify the cryptographic HMAC-SHA256 signature in the <code style="font-family: var(--font-mono); color: #1d4ed8;">X-Signature</code> header on payment callbacks.</p>
-        <div style="display: flex; gap: 10px; max-width: 540px;">
-          <input type="text" id="webhook-secret-display" class="form-control font-mono" readonly value="Loading...">
+        <div class="inline-input-row">
+          <input type="text" id="webhook-secret-display" class="form-control" style="font-family: var(--font-mono);" readonly value="Loading...">
           <button class="btn btn-secondary" onclick="copyWebhookSecret()">Copy</button>
         </div>
       </div>
 
-      <!-- Webhook Logs Table -->
       <div class="card">
         <div class="card-header">
           <div class="card-title">Recent Webhook Deliveries</div>
@@ -1265,9 +1513,7 @@
                 <th>Sent At</th>
               </tr>
             </thead>
-            <tbody id="webhook-logs-tbody">
-              <!-- Rendered via JS -->
-            </tbody>
+            <tbody id="webhook-logs-tbody"></tbody>
           </table>
           <div id="webhooks-empty-state" class="empty-state-box" style="display: none;">
             <div class="empty-state-title">No Webhooks Logged</div>
@@ -1304,16 +1550,21 @@
           <div style="font-size: 0.95rem; font-weight: 700; color: var(--text-main); margin-bottom: 12px;">Change Password</div>
 
           <div class="form-group">
+            <label for="settings-current-password">Current Password (Required only if changing password)</label>
+            <input type="password" id="settings-current-password" class="form-control" placeholder="••••••••" autocomplete="current-password">
+          </div>
+
+          <div class="form-group">
             <label for="settings-new-password">New Password (Leave blank to keep unchanged)</label>
-            <input type="password" id="settings-new-password" class="form-control" placeholder="••••••••" minlength="8" autocomplete="new-password">
+            <input type="password" id="settings-new-password" class="form-control" placeholder="••••••••" minlength="6" autocomplete="new-password">
           </div>
 
           <div class="form-group">
             <label for="settings-confirm-password">Confirm New Password</label>
-            <input type="password" id="settings-confirm-password" class="form-control" placeholder="••••••••" minlength="8" autocomplete="new-password">
+            <input type="password" id="settings-confirm-password" class="form-control" placeholder="••••••••" minlength="6" autocomplete="new-password">
           </div>
 
-          <button type="submit" id="btn-save-settings" class="btn btn-primary" style="margin-top: 10px;">
+          <button type="submit" id="btn-save-settings" class="btn btn-primary" style="margin-top: 8px;">
             Save Profile Changes
           </button>
         </form>
@@ -1329,12 +1580,16 @@
     <div class="modal-box">
       <div class="modal-header">
         <h3 class="modal-title">Create Payment Link</h3>
-        <button class="drawer-close-btn" onclick="closeModal('modal-create-link')">✕</button>
+        <button type="button" class="drawer-close-btn" onclick="closeModal('modal-create-link')" aria-label="Close">✕</button>
       </div>
       <form id="form-create-link">
         <div class="form-group">
           <label for="link-amount">Amount (INR)</label>
           <input type="number" step="0.01" min="1" id="link-amount" class="form-control" placeholder="50.00" required>
+        </div>
+        <div class="form-group">
+          <label for="link-expiry">Link Expiry (Minutes)</label>
+          <input type="number" min="1" max="10080" id="link-expiry" class="form-control" value="10" required>
         </div>
         <div class="form-group">
           <label for="link-note">Note / Description (Optional)</label>
@@ -1344,9 +1599,9 @@
           <label for="link-redirect-url">Customer Redirect URL (Optional)</label>
           <input type="url" id="link-redirect-url" class="form-control" placeholder="https://yourwebsite.com/success">
         </div>
-        <div style="display: flex; gap: 12px; margin-top: 20px;">
-          <button type="submit" class="btn btn-primary" style="flex: 1;">Generate Link</button>
+        <div class="modal-footer">
           <button type="button" class="btn btn-secondary" onclick="closeModal('modal-create-link')">Cancel</button>
+          <button type="submit" id="btn-submit-create-link" class="btn btn-primary">Generate Link</button>
         </div>
       </form>
     </div>
@@ -1359,16 +1614,16 @@
     <div class="modal-box">
       <div class="modal-header">
         <h3 class="modal-title">Generate API Key</h3>
-        <button class="drawer-close-btn" onclick="closeModal('modal-create-key')">✕</button>
+        <button type="button" class="drawer-close-btn" onclick="closeModal('modal-create-key')" aria-label="Close">✕</button>
       </div>
       <form id="form-create-key">
         <div class="form-group">
           <label for="key-name">Key Name</label>
           <input type="text" id="key-name" class="form-control" placeholder="e.g. Production Backend, WooCommerce" required>
         </div>
-        <div style="display: flex; gap: 12px; margin-top: 20px;">
-          <button type="submit" class="btn btn-primary" style="flex: 1;">Generate</button>
+        <div class="modal-footer">
           <button type="button" class="btn btn-secondary" onclick="closeModal('modal-create-key')">Cancel</button>
+          <button type="submit" id="btn-submit-create-key" class="btn btn-primary">Generate</button>
         </div>
       </form>
     </div>
@@ -1381,46 +1636,48 @@
     <div class="modal-box">
       <div class="modal-header">
         <h3 class="modal-title" style="color: #10b981;">API Key Generated</h3>
-        <button class="drawer-close-btn" onclick="closeModal('modal-show-key')">✕</button>
+        <button type="button" class="drawer-close-btn" onclick="closeModal('modal-show-key')" aria-label="Close">✕</button>
       </div>
       <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
         Make sure to copy your API key now. For your security, this key will not be shown again.
       </p>
       <div class="form-group">
-        <textarea id="new-key-display" class="form-control font-mono" rows="3" readonly style="font-size: 13px; resize: none;"></textarea>
+        <textarea id="new-key-display" class="form-control" rows="3" readonly style="font-family: var(--font-mono); font-size: 13px; resize: none;"></textarea>
       </div>
-      <div style="display: flex; gap: 12px;">
-        <button class="btn btn-primary" style="flex: 1;" onclick="copyNewKey()">Copy Key</button>
-        <button class="btn btn-secondary" onclick="closeModal('modal-show-key')">Done</button>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-show-key')">Done</button>
+        <button type="button" class="btn btn-primary" onclick="copyNewKey()">Copy Key</button>
       </div>
     </div>
   </div>
 
   <!-- ==========================================================================
-       MODAL 4: CUSTOM CONFIRMATION MODAL (No window.confirm)
+       MODAL 4: CUSTOM CONFIRMATION MODAL
        ========================================================================== -->
   <div id="modal-confirm" class="modal-backdrop">
     <div class="modal-box">
       <div class="modal-header">
         <h3 id="modal-confirm-title" class="modal-title">Are you sure?</h3>
-        <button class="drawer-close-btn" onclick="closeConfirmModal(false)">✕</button>
+        <button type="button" class="drawer-close-btn" onclick="closeConfirmModal(false)" aria-label="Close">✕</button>
       </div>
-      <p id="modal-confirm-message" style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 22px; line-height: 1.5;"></p>
-      <div style="display: flex; gap: 12px; justify-content: flex-end;">
-        <button class="btn btn-secondary" onclick="closeConfirmModal(false)">Cancel</button>
-        <button id="modal-confirm-btn" class="btn btn-danger" onclick="closeConfirmModal(true)">Confirm</button>
+      <p id="modal-confirm-message" style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5;"></p>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeConfirmModal(false)">Cancel</button>
+        <button type="button" id="modal-confirm-btn" class="btn btn-danger" onclick="closeConfirmModal(true)">Confirm</button>
       </div>
     </div>
   </div>
 
   <!-- ==========================================================================
-       DASHBOARD LOGIC JAVASCRIPT
+       DASHBOARD JAVASCRIPT
        ========================================================================== -->
   <script>
     // State variables
     let currentAdmin = null;
     let paymentsChartInstance = null;
     let pendingConfirmResolve = null;
+    let csrfToken = '';
+    let isGatewayConfigured = false;
 
     // Toast Utility
     function showToast(message, type = 'info') {
@@ -1433,7 +1690,131 @@
         toast.style.opacity = '0';
         toast.style.transform = 'translateX(100%)';
         setTimeout(() => toast.remove(), 250);
-      }, 3500);
+      }, 3800);
+    }
+
+    // Shared CSRF & API Helper — ALL requests go through this helper
+    async function fetchCsrfToken(force = false) {
+      if (csrfToken && !force) return csrfToken;
+      try {
+        const res = await fetch('/api/csrf', { credentials: 'same-origin' });
+        const data = await res.json();
+        if (data.success && data.token) {
+          csrfToken = data.token;
+        }
+      } catch (err) {
+        console.error('Failed to fetch CSRF token:', err);
+      }
+      return csrfToken;
+    }
+
+    async function api(path, method = 'GET', body = null, _retried = false) {
+      const upperMethod = method.toUpperCase();
+      const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(upperMethod);
+      if (isMutation && !csrfToken) {
+        await fetchCsrfToken(true);
+      }
+
+      const headers = {};
+      if (isMutation) {
+        headers['X-CSRF-Token'] = csrfToken;
+        headers['Content-Type'] = 'application/json';
+      } else if (body !== null && body !== undefined) {
+        headers['Content-Type'] = 'application/json';
+      }
+
+      const opts = {
+        method: upperMethod,
+        credentials: 'same-origin',
+        headers
+      };
+      if (body !== null && body !== undefined) {
+        opts.body = JSON.stringify(body);
+      }
+
+      const res = await fetch(path, opts);
+      let data = null;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        data = { success: res.ok, error: { code: 'HTTP_' + res.status, message: text || 'Unexpected server response' } };
+      }
+
+      if (res.status === 403 && data?.error?.code === 'CSRF_INVALID' && !_retried) {
+        await fetchCsrfToken(true);
+        return api(path, method, body, true);
+      }
+
+      if (res.status === 401) {
+        window.location.href = '/login';
+      }
+
+      return { status: res.status, ok: res.ok, data };
+    }
+
+    // Sync UI Configuration Gate (BUG 2)
+    function updateConfigurationGateUI(configured, lastError = null) {
+      isGatewayConfigured = Boolean(configured);
+
+      const topbarBadge = document.getElementById('topbar-conn-badge');
+      const topbarText = document.getElementById('topbar-conn-text');
+      if (isGatewayConfigured) {
+        topbarBadge.className = 'connection-status-pill status-connected';
+        topbarText.innerText = 'Connected';
+      } else {
+        topbarBadge.className = 'connection-status-pill status-disconnected';
+        topbarText.innerText = 'Disconnected';
+      }
+
+      const banner = document.getElementById('setup-incomplete-banner');
+      const bannerMsg = document.getElementById('setup-banner-msg');
+      if (!isGatewayConfigured) {
+        bannerMsg.innerText = lastError
+          ? `Connection issue (${lastError}): reconnect your UPI ID and Gmail to resume accepting payments.`
+          : 'Setup incomplete: connect your UPI ID and Gmail to start accepting payments';
+        banner.classList.add('visible');
+      } else {
+        banner.classList.remove('visible');
+      }
+
+      const gatedButtons = [
+        document.getElementById('btn-topbar-create-link'),
+        document.getElementById('btn-create-link'),
+        document.getElementById('btn-empty-create-link'),
+        document.getElementById('btn-create-key'),
+        document.getElementById('btn-empty-create-key')
+      ];
+      gatedButtons.forEach(btn => {
+        if (!btn) return;
+        if (isGatewayConfigured) {
+          btn.classList.remove('is-disabled');
+          btn.removeAttribute('aria-disabled');
+        } else {
+          btn.classList.add('is-disabled');
+          btn.setAttribute('aria-disabled', 'true');
+          btn.title = 'Connect your UPI ID and Gmail first';
+        }
+      });
+
+      const linksSub = document.getElementById('links-gated-subtext');
+      const keysSub = document.getElementById('keys-gated-subtext');
+      if (linksSub) linksSub.classList.toggle('visible', !isGatewayConfigured);
+      if (keysSub) keysSub.classList.toggle('visible', !isGatewayConfigured);
+    }
+
+    function requireConfiguredOrRedirect() {
+      if (isGatewayConfigured) return true;
+      showToast('Connect first — link your UPI ID and Gmail to continue.', 'error');
+      switchTab('connect');
+      return false;
+    }
+
+    function handleTopCreateLink() {
+      if (!requireConfiguredOrRedirect()) return;
+      switchTab('links');
+      openCreateLinkModal();
     }
 
     // Custom Confirm Modal
@@ -1465,7 +1846,7 @@
       document.getElementById(id).classList.remove('active');
     }
 
-    // Drawer Navigation Controls (Requirement 2)
+    // Drawer Controls
     function toggleDrawer(force) {
       const drawer = document.getElementById('nav-drawer');
       const overlay = document.getElementById('drawer-overlay');
@@ -1483,11 +1864,14 @@
       }
     }
 
-    // Keyboard support: ESC closes drawer or modals
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         toggleDrawer(false);
         document.querySelectorAll('.modal-backdrop').forEach(el => el.classList.remove('active'));
+        if (pendingConfirmResolve) {
+          pendingConfirmResolve(false);
+          pendingConfirmResolve = null;
+        }
       }
     });
 
@@ -1530,9 +1914,8 @@
       if (activeLink) activeLink.classList.add('active');
 
       document.getElementById('topbar-page-name').innerText = tabTitles[tabId] || 'Dashboard';
-      toggleDrawer(false); // Close drawer after selection
+      toggleDrawer(false);
 
-      // Load specific tab data
       if (tabId === 'dashboard') loadDashboard();
       else if (tabId === 'connect') loadConnection();
       else if (tabId === 'links') loadPaymentLinks();
@@ -1544,12 +1927,8 @@
     // 1. Dashboard Data Loader
     async function loadDashboard() {
       try {
-        const res = await fetch('/api/admin/stats');
-        const data = await res.json();
-        if (!data.success) {
-          if (res.status === 401) window.location.href = '/login';
-          return;
-        }
+        const { data } = await api('/api/admin/stats');
+        if (!data.success) return;
 
         const s = data.stats;
         document.getElementById('stat-total-received').innerText = Number(s.total_received || 0).toFixed(2);
@@ -1562,10 +1941,7 @@
         document.getElementById('stat-cancelled-count').innerText = s.cancelled || 0;
         document.getElementById('stat-failed-count').innerText = s.failed || 0;
 
-        // Render Chart.js
         renderChart(data.time_series || []);
-
-        // Render Recent Transactions
         renderRecentTransactions(data.recent_transactions || []);
       } catch (err) {
         console.error('Failed to load dashboard:', err);
@@ -1576,7 +1952,7 @@
       const ctx = document.getElementById('paymentsChart');
       if (!ctx) return;
 
-      const labels = timeSeries.map(item => item.date.slice(5)); // MM-DD
+      const labels = timeSeries.map(item => item.date.slice(5));
       const amounts = timeSeries.map(item => item.amount);
       const isDark = document.documentElement.classList.contains('dark');
       const hasData = amounts.some(a => a > 0);
@@ -1610,7 +1986,7 @@
             legend: { display: false },
             tooltip: {
               callbacks: {
-                label: (ctx) => ` ₹${Number(ctx.raw).toFixed(2)}`
+                label: (ctxItem) => ` ₹${Number(ctxItem.raw).toFixed(2)}`
               }
             }
           },
@@ -1655,13 +2031,13 @@
       txns.forEach(t => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td style="font-family: var(--font-mono); font-weight: 700;">
-            <a href="/pay/${t.id}" target="_blank" style="color: #1d4ed8;">${t.id}</a>
+          <td data-label="Order ID" style="font-family: var(--font-mono); font-weight: 700;">
+            <a href="/pay/${t.id}" style="color: #1d4ed8;">${t.id}</a>
           </td>
-          <td style="font-weight: 700; font-family: var(--font-mono);">₹${Number(t.payable_amount).toFixed(2)}</td>
-          <td><span class="badge badge-${t.status}">${t.status}</span></td>
-          <td style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);">${t.utr || '—'}</td>
-          <td style="font-size: 12px; color: var(--text-muted);">${new Date(t.created_at).toLocaleString()}</td>
+          <td data-label="Amount" style="font-weight: 700; font-family: var(--font-mono);">₹${Number(t.payable_amount).toFixed(2)}</td>
+          <td data-label="Status"><span class="badge badge-${t.status}">${t.status}</span></td>
+          <td data-label="UTR / Ref" style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);">${t.utr || '—'}</td>
+          <td data-label="Created" style="font-size: 12px; color: var(--text-muted);">${new Date(t.created_at).toLocaleString()}</td>
         `;
         tbody.appendChild(tr);
       });
@@ -1670,41 +2046,51 @@
     // 2. Connect Tab
     async function loadConnection() {
       try {
-        const res = await fetch('/api/admin/connection');
-        const data = await res.json();
+        const { data } = await api('/api/admin/connection');
         const badge = document.getElementById('conn-status-badge');
-        const topbarBadge = document.getElementById('topbar-conn-badge');
-        const topbarText = document.getElementById('topbar-conn-text');
         const card = document.getElementById('conn-status-card');
         const disconnectBtn = document.getElementById('btn-disconnect-conn');
+        const errorBox = document.getElementById('conn-last-error');
 
-        if (data.connected) {
-          topbarBadge.className = 'connection-status-pill status-connected';
-          topbarText.innerText = 'Connected';
+        const isConnected = Boolean(data.connected);
+        updateConfigurationGateUI(isConnected, isConnected ? null : data.last_error);
+
+        if (data.upi_id) document.getElementById('conn-upi-id').value = data.upi_id;
+        if (data.gmail) document.getElementById('conn-gmail').value = data.gmail;
+
+        if (data.has_password) {
+          document.getElementById('conn-app-password').placeholder = '•••••••••••••••• (Leave blank to keep saved)';
+          document.getElementById('conn-app-password').required = false;
+        } else {
+          document.getElementById('conn-app-password').placeholder = '16-character Google App Password';
+          document.getElementById('conn-app-password').required = true;
+        }
+
+        if (isConnected) {
           badge.className = 'badge badge-paid';
           badge.innerText = 'Active Worker';
           disconnectBtn.style.display = 'inline-flex';
           card.style.display = 'block';
-
-          document.getElementById('conn-upi-id').value = data.upi_id || '';
-          document.getElementById('conn-gmail').value = data.gmail || '';
-          document.getElementById('conn-app-password').placeholder = '•••••••••••••••• (Leave blank to keep current)';
-          document.getElementById('conn-app-password').required = false;
-
-          document.getElementById('conn-last-checked').innerText = `Last polled: ${data.last_checked ? new Date(data.last_checked).toLocaleTimeString() : 'Never'}`;
+          document.getElementById('conn-last-checked').innerText =
+            `Last polled: ${data.last_checked ? new Date(data.last_checked).toLocaleTimeString() : 'Just now'}`;
+          errorBox.style.display = 'none';
+        } else if (data.has_credentials || data.last_error) {
+          badge.className = 'badge badge-failed';
+          badge.innerText = 'Disconnected';
+          disconnectBtn.style.display = 'none';
+          card.style.display = 'block';
+          document.getElementById('conn-last-checked').innerText =
+            `Last checked: ${data.last_checked ? new Date(data.last_checked).toLocaleTimeString() : 'Never'}`;
           if (data.last_error) {
-            document.getElementById('conn-last-error').innerText = `Error: ${data.last_error}`;
-            document.getElementById('conn-last-error').style.display = 'block';
+            errorBox.innerText = `Error: ${data.last_error}`;
+            errorBox.style.display = 'block';
           } else {
-            document.getElementById('conn-last-error').style.display = 'none';
+            errorBox.style.display = 'none';
           }
         } else {
-          topbarBadge.className = 'connection-status-pill status-disconnected';
-          topbarText.innerText = 'Disconnected';
           disconnectBtn.style.display = 'none';
           card.style.display = 'none';
-          document.getElementById('conn-app-password').placeholder = '16-character Google App Password';
-          document.getElementById('conn-app-password').required = true;
+          errorBox.style.display = 'none';
         }
       } catch (err) {
         console.error('Failed to load connection:', err);
@@ -1722,17 +2108,14 @@
       const app_password = document.getElementById('conn-app-password').value.trim();
 
       try {
-        const res = await fetch('/api/admin/connection', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ upi_id, gmail, app_password })
-        });
-        const data = await res.json();
+        const { data } = await api('/api/admin/connection', 'POST', { upi_id, gmail, app_password });
         if (data.success) {
+          document.getElementById('conn-app-password').value = '';
           showToast('FamApp & Gmail connection verified and active!', 'success');
-          loadConnection();
+          await loadConnection();
         } else {
           showToast(data.error?.message || 'Connection test failed', 'error');
+          await loadConnection();
         }
       } catch (err) {
         showToast('Error connecting to gateway backend', 'error');
@@ -1745,21 +2128,20 @@
     async function disconnectFamApp() {
       const confirmed = await showConfirmModal(
         'Disconnect FamApp Email Poller?',
-        'This will stop the automated background email checking. Incoming UPI payments will not be verified automatically until reconnected.',
+        'This will stop automated email checking and pause payment link/API creation until reconnected.',
         'Disconnect',
         true
       );
       if (!confirmed) return;
 
       try {
-        const res = await fetch('/api/admin/connection/disconnect', { method: 'POST' });
-        const data = await res.json();
+        const { data } = await api('/api/admin/connection/disconnect', 'POST', {});
         if (data.success) {
           showToast('FamApp disconnected', 'info');
-          document.getElementById('conn-upi-id').value = '';
-          document.getElementById('conn-gmail').value = '';
           document.getElementById('conn-app-password').value = '';
-          loadConnection();
+          await loadConnection();
+        } else {
+          showToast(data.error?.message || 'Failed to disconnect', 'error');
         }
       } catch (err) {
         showToast('Failed to disconnect', 'error');
@@ -1768,7 +2150,9 @@
 
     // 3. Payment Links Tab
     function openCreateLinkModal() {
+      if (!requireConfiguredOrRedirect()) return;
       document.getElementById('link-amount').value = '';
+      document.getElementById('link-expiry').value = '10';
       document.getElementById('link-note').value = '';
       document.getElementById('link-redirect-url').value = '';
       openModal('modal-create-link');
@@ -1776,8 +2160,7 @@
 
     async function loadPaymentLinks() {
       try {
-        const res = await fetch('/api/admin/orders?source=link');
-        const data = await res.json();
+        const { data } = await api('/api/admin/orders?source=link');
         const tbody = document.getElementById('links-table-tbody');
         const empty = document.getElementById('links-empty-state');
         tbody.innerHTML = '';
@@ -1791,18 +2174,19 @@
         data.orders.forEach(o => {
           const tr = document.createElement('tr');
           tr.innerHTML = `
-            <td style="font-family: var(--font-mono); font-weight: 700;">
-              <a href="/pay/${o.id}" target="_blank" style="color: #1d4ed8;">${o.id}</a>
+            <td data-label="Order ID" style="font-family: var(--font-mono); font-weight: 700;">
+              <a href="/pay/${o.id}" style="color: #1d4ed8;">${o.id}</a>
             </td>
-            <td style="font-family: var(--font-mono);">₹${Number(o.base_amount).toFixed(2)}</td>
-            <td style="font-family: var(--font-mono); font-weight: 700; color: #1d4ed8;">₹${Number(o.payable_amount).toFixed(2)}</td>
-            <td><span class="badge badge-${o.status}">${o.status}</span></td>
-            <td style="font-size: 12px; color: var(--text-muted);">${new Date(o.created_at).toLocaleString()}</td>
-            <td>
-              <div style="display: flex; gap: 8px;">
+            <td data-label="Base Amount" style="font-family: var(--font-mono);">₹${Number(o.base_amount).toFixed(2)}</td>
+            <td data-label="Payable" style="font-family: var(--font-mono); font-weight: 700; color: #1d4ed8;">₹${Number(o.payable_amount).toFixed(2)}</td>
+            <td data-label="Status"><span class="badge badge-${o.status}">${o.status}</span></td>
+            <td data-label="Created" style="font-size: 12px; color: var(--text-muted);">${new Date(o.created_at).toLocaleString()}</td>
+            <td data-label="Actions">
+              <div class="table-actions">
                 <button class="btn btn-secondary btn-sm" onclick="copyLink('/pay/${o.id}')">Copy</button>
-                <a href="/pay/${o.id}" target="_blank" class="btn btn-secondary btn-sm">Open ↗</a>
+                <a href="/pay/${o.id}" class="btn btn-secondary btn-sm">Open ↗</a>
                 ${o.status === 'pending' ? `<button class="btn btn-danger btn-sm" onclick="cancelOrder('${o.id}')">Cancel</button>` : ''}
+                <button class="btn btn-danger btn-sm" onclick="deleteOrder('${o.id}')">Delete</button>
               </div>
             </td>
           `;
@@ -1821,27 +2205,46 @@
 
     document.getElementById('form-create-link').addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (!requireConfiguredOrRedirect()) {
+        closeModal('modal-create-link');
+        return;
+      }
+
       const amount = parseFloat(document.getElementById('link-amount').value);
+      const expiry_minutes = parseInt(document.getElementById('link-expiry').value, 10) || 10;
       const note = document.getElementById('link-note').value.trim();
       const redirect_url = document.getElementById('link-redirect-url').value.trim();
 
+      const btn = document.getElementById('btn-submit-create-link');
+      btn.disabled = true;
+      btn.innerText = 'Generating...';
+
       try {
-        const res = await fetch('/api/admin/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount, note, redirect_url, source: 'link' })
+        const { status, data } = await api('/api/admin/orders', 'POST', {
+          amount,
+          expiry_minutes,
+          note,
+          redirect_url
         });
-        const data = await res.json();
         if (data.success) {
           closeModal('modal-create-link');
           showToast('Payment link generated!', 'success');
           loadPaymentLinks();
-          copyLink(`/pay/${data.order.order_id}`);
+          loadDashboard();
+          copyLink(`/pay/${data.order_id}`);
         } else {
           showToast(data.error?.message || 'Failed to generate link', 'error');
+          if (status === 409 && data.error?.code === 'NOT_CONFIGURED') {
+            closeModal('modal-create-link');
+            updateConfigurationGateUI(false);
+            switchTab('connect');
+          }
         }
       } catch (err) {
         showToast('Error generating link', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Generate Link';
       }
     });
 
@@ -1855,27 +2258,51 @@
       if (!confirmed) return;
 
       try {
-        const res = await fetch(`/api/admin/orders/${orderId}/cancel`, { method: 'POST' });
-        const data = await res.json();
+        const { data } = await api(`/api/admin/orders/${orderId}/cancel`, 'POST', {});
         if (data.success) {
           showToast('Order cancelled', 'info');
           loadPaymentLinks();
           loadTransactions();
           loadDashboard();
+        } else {
+          showToast(data.error?.message || 'Failed to cancel order', 'error');
         }
       } catch (err) {
         showToast('Error cancelling order', 'error');
       }
     }
 
+    async function deleteOrder(orderId) {
+      const confirmed = await showConfirmModal(
+        'Delete Payment Record?',
+        `Permanently delete order ${orderId} from history? This cannot be undone.`,
+        'Delete Order',
+        true
+      );
+      if (!confirmed) return;
+
+      try {
+        const { data } = await api(`/api/admin/orders/${orderId}`, 'DELETE');
+        if (data.success) {
+          showToast('Order deleted', 'info');
+          loadPaymentLinks();
+          loadTransactions();
+          loadDashboard();
+        } else {
+          showToast(data.error?.message || 'Failed to delete order', 'error');
+        }
+      } catch (err) {
+        showToast('Error deleting order', 'error');
+      }
+    }
+
     // 4. Transactions Tab
     async function loadTransactions() {
       const status = document.getElementById('filter-status').value;
-      const url = `/api/admin/orders${status ? `?status=${status}` : ''}`;
+      const url = `/api/admin/orders${status ? `?status=${encodeURIComponent(status)}` : ''}`;
 
       try {
-        const res = await fetch(url);
-        const data = await res.json();
+        const { data } = await api(url);
         const tbody = document.getElementById('transactions-table-tbody');
         const empty = document.getElementById('transactions-empty-state');
         tbody.innerHTML = '';
@@ -1889,19 +2316,20 @@
         data.orders.forEach(o => {
           const tr = document.createElement('tr');
           tr.innerHTML = `
-            <td style="font-family: var(--font-mono); font-weight: 700;">
-              <a href="/pay/${o.id}" target="_blank" style="color: #1d4ed8;">${o.id}</a>
+            <td data-label="Order ID" style="font-family: var(--font-mono); font-weight: 700;">
+              <a href="/pay/${o.id}" style="color: #1d4ed8;">${o.id}</a>
             </td>
-            <td><span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">${o.source}</span></td>
-            <td style="font-weight: 700; font-family: var(--font-mono);">₹${Number(o.payable_amount).toFixed(2)}</td>
-            <td><span class="badge badge-${o.status}">${o.status}</span></td>
-            <td style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);">${o.utr || '—'}</td>
-            <td style="font-size: 12px; color: var(--text-muted);">${new Date(o.created_at).toLocaleString()}</td>
-            <td style="font-size: 12px; color: var(--text-muted);">${o.paid_at ? new Date(o.paid_at).toLocaleString() : '—'}</td>
-            <td>
-              <div style="display: flex; gap: 6px;">
-                <a href="/pay/${o.id}" target="_blank" class="btn btn-secondary btn-sm">View</a>
+            <td data-label="Source"><span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">${o.source}</span></td>
+            <td data-label="Payable" style="font-weight: 700; font-family: var(--font-mono);">₹${Number(o.payable_amount).toFixed(2)}</td>
+            <td data-label="Status"><span class="badge badge-${o.status}">${o.status}</span></td>
+            <td data-label="UTR" style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);">${o.utr || '—'}</td>
+            <td data-label="Created" style="font-size: 12px; color: var(--text-muted);">${new Date(o.created_at).toLocaleString()}</td>
+            <td data-label="Paid At" style="font-size: 12px; color: var(--text-muted);">${o.paid_at ? new Date(o.paid_at).toLocaleString() : '—'}</td>
+            <td data-label="Action">
+              <div class="table-actions">
+                <a href="/pay/${o.id}" class="btn btn-secondary btn-sm">View</a>
                 ${o.status === 'pending' ? `<button class="btn btn-danger btn-sm" onclick="cancelOrder('${o.id}')">Cancel</button>` : ''}
+                <button class="btn btn-danger btn-sm" onclick="deleteOrder('${o.id}')">Delete</button>
               </div>
             </td>
           `;
@@ -1918,8 +2346,7 @@
 
     async function loadUnmatched() {
       try {
-        const res = await fetch('/api/admin/unmatched');
-        const data = await res.json();
+        const { data } = await api('/api/admin/unmatched');
         const tbody = document.getElementById('unmatched-table-tbody');
         const empty = document.getElementById('unmatched-empty-state');
         tbody.innerHTML = '';
@@ -1933,11 +2360,11 @@
         data.unmatched.forEach(u => {
           const tr = document.createElement('tr');
           tr.innerHTML = `
-            <td style="font-family: var(--font-mono); font-weight: 700; color: #ef4444;">₹${Number(u.amount).toFixed(2)}</td>
-            <td>${u.sender_name || 'UPI Customer'}</td>
-            <td style="font-family: var(--font-mono); font-size: 12px;">${u.utr || '—'}</td>
-            <td style="font-size: 12px; color: var(--text-muted);">${new Date(u.received_at).toLocaleString()}</td>
-            <td style="font-size: 12px; color: #ef4444;">${u.reason}</td>
+            <td data-label="Amount" style="font-family: var(--font-mono); font-weight: 700; color: #ef4444;">₹${Number(u.amount).toFixed(2)}</td>
+            <td data-label="Sender">${u.sender_name || 'UPI Customer'}</td>
+            <td data-label="UTR / Ref" style="font-family: var(--font-mono); font-size: 12px;">${u.utr || '—'}</td>
+            <td data-label="Received At" style="font-size: 12px; color: var(--text-muted);">${new Date(u.received_at).toLocaleString()}</td>
+            <td data-label="Reason" style="font-size: 12px; color: #ef4444;">${u.reason}</td>
           `;
           tbody.appendChild(tr);
         });
@@ -1948,14 +2375,14 @@
 
     // 5. API Keys Tab
     function openCreateApiKeyModal() {
+      if (!requireConfiguredOrRedirect()) return;
       document.getElementById('key-name').value = '';
       openModal('modal-create-key');
     }
 
     async function loadApiKeys() {
       try {
-        const res = await fetch('/api/admin/keys');
-        const data = await res.json();
+        const { data } = await api('/api/admin/keys');
         const tbody = document.getElementById('api-keys-tbody');
         const empty = document.getElementById('keys-empty-state');
         tbody.innerHTML = '';
@@ -1969,11 +2396,11 @@
         data.keys.forEach(k => {
           const tr = document.createElement('tr');
           tr.innerHTML = `
-            <td style="font-weight: 700;">${k.name}</td>
-            <td style="font-family: var(--font-mono); font-size: 13px;">${k.prefix}...</td>
-            <td style="font-size: 12px; color: var(--text-muted);">${new Date(k.created_at).toLocaleDateString()}</td>
-            <td><span class="badge ${k.revoked ? 'badge-failed' : 'badge-paid'}">${k.revoked ? 'Revoked' : 'Active'}</span></td>
-            <td>
+            <td data-label="Name" style="font-weight: 700;">${k.name}</td>
+            <td data-label="Key Prefix" style="font-family: var(--font-mono); font-size: 13px;">${k.prefix}</td>
+            <td data-label="Created" style="font-size: 12px; color: var(--text-muted);">${new Date(k.created_at).toLocaleDateString()}</td>
+            <td data-label="Status"><span class="badge ${k.revoked ? 'badge-failed' : 'badge-paid'}">${k.revoked ? 'Revoked' : 'Active'}</span></td>
+            <td data-label="Action">
               ${!k.revoked ? `<button class="btn btn-danger btn-sm" onclick="revokeKey(${k.id})">Revoke</button>` : '<span style="color:var(--text-dim); font-size:12px;">Revoked</span>'}
             </td>
           `;
@@ -1986,25 +2413,36 @@
 
     document.getElementById('form-create-key').addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (!requireConfiguredOrRedirect()) {
+        closeModal('modal-create-key');
+        return;
+      }
+
       const name = document.getElementById('key-name').value.trim();
+      const btn = document.getElementById('btn-submit-create-key');
+      btn.disabled = true;
+      btn.innerText = 'Generating...';
 
       try {
-        const res = await fetch('/api/admin/keys', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name })
-        });
-        const data = await res.json();
-        if (data.success) {
+        const { status, data } = await api('/api/admin/keys', 'POST', { name });
+        if (data.success && data.key) {
           closeModal('modal-create-key');
-          document.getElementById('new-key-display').value = data.raw_key;
+          document.getElementById('new-key-display').value = data.key.plain_key;
           openModal('modal-show-key');
           loadApiKeys();
         } else {
           showToast(data.error?.message || 'Failed to generate key', 'error');
+          if (status === 409 && data.error?.code === 'NOT_CONFIGURED') {
+            closeModal('modal-create-key');
+            updateConfigurationGateUI(false);
+            switchTab('connect');
+          }
         }
       } catch (err) {
         showToast('Error generating key', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Generate';
       }
     });
 
@@ -2024,11 +2462,12 @@
       if (!confirmed) return;
 
       try {
-        const res = await fetch(`/api/admin/keys/${keyId}/revoke`, { method: 'POST' });
-        const data = await res.json();
+        const { data } = await api(`/api/admin/keys/${keyId}/revoke`, 'POST', {});
         if (data.success) {
           showToast('API Key revoked', 'info');
           loadApiKeys();
+        } else {
+          showToast(data.error?.message || 'Failed to revoke key', 'error');
         }
       } catch (err) {
         showToast('Failed to revoke key', 'error');
@@ -2037,8 +2476,7 @@
 
     async function loadWebhookSecret() {
       try {
-        const res = await fetch('/api/admin/webhook-secret');
-        const data = await res.json();
+        const { data } = await api('/api/admin/webhook-secret');
         if (data.success) {
           document.getElementById('webhook-secret-display').value = data.webhook_secret;
         }
@@ -2063,11 +2501,12 @@
       if (!confirmed) return;
 
       try {
-        const res = await fetch('/api/admin/webhook-secret/regenerate', { method: 'POST' });
-        const data = await res.json();
+        const { data } = await api('/api/admin/webhook-secret/regenerate', 'POST', {});
         if (data.success) {
           document.getElementById('webhook-secret-display').value = data.webhook_secret;
           showToast('New webhook secret generated!', 'success');
+        } else {
+          showToast(data.error?.message || 'Failed to regenerate secret', 'error');
         }
       } catch (err) {
         showToast('Failed to regenerate secret', 'error');
@@ -2076,8 +2515,7 @@
 
     async function loadWebhookLogs() {
       try {
-        const res = await fetch('/api/admin/webhook-logs');
-        const data = await res.json();
+        const { data } = await api('/api/admin/webhook-logs');
         const tbody = document.getElementById('webhook-logs-tbody');
         const empty = document.getElementById('webhooks-empty-state');
         tbody.innerHTML = '';
@@ -2091,12 +2529,12 @@
         data.logs.forEach(l => {
           const tr = document.createElement('tr');
           tr.innerHTML = `
-            <td style="font-family: var(--font-mono); font-weight: 700;">${l.order_id}</td>
-            <td style="font-family: var(--font-mono); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${l.url}</td>
-            <td>${l.attempt}</td>
-            <td style="font-family: var(--font-mono);">${l.response_code || '—'}</td>
-            <td><span class="badge ${l.success ? 'badge-paid' : 'badge-failed'}">${l.success ? 'Delivered' : 'Failed'}</span></td>
-            <td style="font-size: 12px; color: var(--text-muted);">${new Date(l.created_at).toLocaleTimeString()}</td>
+            <td data-label="Order ID" style="font-family: var(--font-mono); font-weight: 700;">${l.order_id}</td>
+            <td data-label="Target URL" style="font-family: var(--font-mono); font-size: 12px;">${l.url}</td>
+            <td data-label="Attempt">${l.attempt}</td>
+            <td data-label="Response" style="font-family: var(--font-mono);">${l.response_code || '—'}</td>
+            <td data-label="Status"><span class="badge ${l.success ? 'badge-paid' : 'badge-failed'}">${l.success ? 'Delivered' : 'Failed'}</span></td>
+            <td data-label="Sent At" style="font-size: 12px; color: var(--text-muted);">${new Date(l.created_at).toLocaleTimeString()}</td>
           `;
           tbody.appendChild(tr);
         });
@@ -2108,8 +2546,7 @@
     // 6. Settings Tab
     async function loadSettingsProfile() {
       try {
-        const res = await fetch('/api/me');
-        const data = await res.json();
+        const { data } = await api('/api/me');
         if (data.logged_in && data.admin) {
           currentAdmin = data.admin;
           document.getElementById('settings-name').value = data.admin.name || '';
@@ -2127,6 +2564,7 @@
       e.preventDefault();
       const name = document.getElementById('settings-name').value.trim();
       const email = document.getElementById('settings-email').value.trim();
+      const current_password = document.getElementById('settings-current-password').value;
       const new_password = document.getElementById('settings-new-password').value;
       const confirm_password = document.getElementById('settings-confirm-password').value;
 
@@ -2141,16 +2579,15 @@
 
       try {
         const payload = { name, email };
-        if (new_password) payload.password = new_password;
+        if (new_password) {
+          payload.current_password = current_password;
+          payload.new_password = new_password;
+        }
 
-        const res = await fetch('/api/admin/profile', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
+        const { data } = await api('/api/admin/profile', 'POST', payload);
         if (data.success) {
           showToast('Profile updated successfully!', 'success');
+          document.getElementById('settings-current-password').value = '';
           document.getElementById('settings-new-password').value = '';
           document.getElementById('settings-confirm-password').value = '';
           loadSettingsProfile();
@@ -2176,42 +2613,50 @@
       if (!confirmed) return;
 
       try {
-        await fetch('/api/logout', { method: 'POST' });
-        window.location.href = '/login';
+        await api('/api/logout', 'POST', {});
       } catch (err) {
-        window.location.href = '/login';
+        console.error(err);
       }
+      window.location.href = '/login';
     }
 
     // Initialize App
     window.addEventListener('DOMContentLoaded', async () => {
       initTheme();
 
-      // Check auth status
       try {
-        const res = await fetch('/api/me');
-        const data = await res.json();
+        await fetchCsrfToken(true);
+        const { data } = await api('/api/me');
         if (!data.logged_in) {
-          window.location.href = data.setup_required ? '/setup' : '/login';
+          window.location.href = (data.setup_required || !data.admin_exists) ? '/setup' : '/login';
           return;
         }
 
+        if (data.csrf_token) csrfToken = data.csrf_token;
         currentAdmin = data.admin;
         document.getElementById('drawer-user-name').innerText = data.admin.name || 'Administrator';
         document.getElementById('drawer-user-email').innerText = data.admin.email || 'admin';
         document.getElementById('drawer-user-avatar').innerText = (data.admin.name || 'A')[0].toUpperCase();
 
-        // Initial tab load
-        loadDashboard();
-        loadConnection();
+        updateConfigurationGateUI(Boolean(data.is_configured));
 
-        // Background poller: refresh dashboard stats and connection state every 10 seconds
+        // First-time guided flow: if gateway is not configured yet, open Connect automatically
+        if (!data.is_configured) {
+          switchTab('connect');
+        } else {
+          await loadDashboard();
+          await loadConnection();
+        }
+
         setInterval(() => {
           const currentTab = document.querySelector('.tab-content.active')?.id;
-          if (currentTab === 'tab-dashboard') loadDashboard();
-          else if (currentTab === 'tab-connect') loadConnection();
+          if (currentTab === 'tab-dashboard') {
+            loadDashboard();
+            loadConnection();
+          } else if (currentTab === 'tab-connect') {
+            loadConnection();
+          }
         }, 10000);
-
       } catch (err) {
         console.error('Initialization error:', err);
       }
