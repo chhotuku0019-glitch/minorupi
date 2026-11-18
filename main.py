@@ -1078,6 +1078,11 @@ def route_setup():
 
 @app.route("/login")
 def route_login():
+    with get_db() as db:
+        if not db.execute("SELECT id FROM admin LIMIT 1").fetchone():
+            return redirect("/setup")
+    if "admin_id" in session:
+        return redirect("/dashboard")
     return send_file(os.path.join(BASE_DIR, "index.html"))
 
 @app.route("/docs")
