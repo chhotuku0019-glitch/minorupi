@@ -48,12 +48,13 @@ BASE_URL = os.environ.get("APP_URL", "").rstrip("/")
 DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gateway.db")
 ALLOWED_EMAIL_DOMAINS = ["famapp.in"]
 API_DEFAULT_EXPIRY_MINUTES = 5
-WORKER_POLL_INTERVAL_SECONDS = 6
+WORKER_POLL_INTERVAL_SECONDS = 5
 CHECKOUT_POLL_INTERVAL_SECONDS = 3
 MAX_PAISE_OFFSET = 100
 MAX_LOGIN_ATTEMPTS = 5
 LOGIN_LOCKOUT_SECONDS = 60
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+IST_TZ = timezone(timedelta(hours=5, minutes=30))
 
 # ==============================================================================
 # FLASK APPLICATION & IN-MEMORY RATE LIMITERS
@@ -148,6 +149,7 @@ def init_db():
                 fail_reason TEXT,
                 utr TEXT UNIQUE,
                 txn_id TEXT,
+                baseline_uid INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL,
                 paid_at TEXT,
@@ -173,6 +175,7 @@ def init_db():
         db.execute("""
             CREATE TABLE IF NOT EXISTS processed_emails (
                 message_id TEXT PRIMARY KEY,
+                uid INTEGER,
                 sender TEXT,
                 subject TEXT,
                 received_at TEXT,
@@ -181,6 +184,30 @@ def init_db():
                 utr TEXT
             );
         """)
+
+        # Verification audit logs
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS verify_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                order_id TEXT,
+                email_uid INTEGER,
+                message_id TEXT,
+                parsed_amount REAL,
+                parsed_utr TEXT,
+                decision TEXT NOT NULL,
+                reason TEXT NOT NULL
+            );
+        """)
+
+        # Safe schema migrations for existing SQLite databases
+        order_cols = {row["name"] for row in db.execute("PRAGMA table_info(orders)").fetchall()}
+        if "baseline_uid" not in order_cols:
+            db.execute("ALTER TABLE orders ADD COLUMN baseline_uid INTEGER NOT NULL DEFAULT 0;")
+
+        proc_cols = {row["name"] for row in db.execute("PRAGMA table_info(processed_emails)").fetchall()}
+        if "uid" not in proc_cols:
+            db.execute("ALTER TABLE processed_emails ADD COLUMN uid INTEGER;")
 
         # Webhook logs
         db.execute("""
@@ -254,6 +281,122 @@ def get_base_url():
 
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
+
+def parse_iso_utc(iso_str: str):
+    if not iso_str:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(iso_str).strip().replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+def parse_imap_internaldate_utc(meta_bytes: bytes, msg_obj=None):
+    """Extracts IMAP INTERNALDATE and converts to timezone-aware UTC datetime."""
+    if meta_bytes:
+        try:
+            meta_str = meta_bytes.decode("utf-8", errors="replace") if isinstance(meta_bytes, (bytes, bytearray)) else str(meta_bytes)
+            m = re.search(r'INTERNALDATE\s+"([^"]+)"', meta_str)
+            if m:
+                raw_date = m.group(1).strip()
+                # Example: 18-Nov-2026 07:45:12 +0000
+                dt = datetime.strptime(raw_date, "%d-%b-%Y %H:%M:%S %z")
+                return dt.astimezone(timezone.utc)
+        except Exception:
+            pass
+    if msg_obj is not None:
+        date_hdr = msg_obj.get("Date")
+        if date_hdr:
+            try:
+                dt = email.utils.parsedate_to_datetime(date_hdr)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.astimezone(timezone.utc)
+            except Exception:
+                pass
+    return None
+
+def parse_fam_ist_date_utc(date_str: str):
+    """
+    Parses FamApp 'Date :' line (e.g. '04:22 PM IST, 02 November 2026')
+    as IST (UTC+5:30) and converts to timezone-aware UTC datetime.
+    """
+    if not date_str:
+        return None
+    cleaned = re.sub(r"\s+", " ", date_str).strip()
+    # Try ISO directly if already ISO
+    iso_dt = parse_iso_utc(cleaned)
+    if iso_dt is not None:
+        return iso_dt
+
+    cleaned_no_ist = re.sub(r"\bIST\b", "", cleaned, flags=re.IGNORECASE)
+    cleaned_no_ist = re.sub(r"\s*,\s*", ", ", cleaned_no_ist)
+    cleaned_no_ist = re.sub(r"\s+", " ", cleaned_no_ist).strip(" ,")
+
+    formats = [
+        "%I:%M %p, %d %B %Y",
+        "%I:%M %p, %d %b %Y",
+        "%I:%M:%S %p, %d %B %Y",
+        "%I:%M:%S %p, %d %b %Y",
+        "%d %B %Y, %I:%M %p",
+        "%d %b %Y, %I:%M %p",
+        "%d %B %Y %I:%M %p",
+        "%d %b %Y %I:%M %p",
+        "%I:%M %p %d %B %Y",
+        "%I:%M %p %d %b %Y",
+        "%H:%M, %d %B %Y",
+        "%H:%M, %d %b %Y",
+        "%d %B %Y, %H:%M",
+        "%d %b %Y, %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+    ]
+    for fmt in formats:
+        try:
+            naive_dt = datetime.strptime(cleaned_no_ist, fmt)
+            ist_dt = naive_dt.replace(tzinfo=IST_TZ)
+            return ist_dt.astimezone(timezone.utc)
+        except Exception:
+            continue
+    return None
+
+def get_current_inbox_max_uid(gmail: str, app_password: str) -> int:
+    """Connects to IMAP once and returns highest current UID in INBOX (0 if empty)."""
+    if not gmail or not app_password:
+        return 0
+    mail = None
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=10)
+        mail.login(gmail, app_password)
+        mail.select("INBOX", readonly=True)
+        status, search_data = mail.uid("SEARCH", None, "ALL")
+        if status == "OK" and search_data and search_data[0]:
+            uids = [int(x) for x in search_data[0].split() if x.isdigit()]
+            return max(uids) if uids else 0
+        return 0
+    except Exception:
+        return 0
+    finally:
+        if mail:
+            try:
+                mail.close()
+            except Exception:
+                pass
+            try:
+                mail.logout()
+            except Exception:
+                pass
+
+def fetch_connection_baseline_uid() -> int:
+    with get_db() as db:
+        conn_row = db.execute("SELECT gmail, encrypted_app_password, status FROM connection WHERE id = 1").fetchone()
+        if not conn_row or conn_row["status"] != "connected":
+            return 0
+        gmail = conn_row["gmail"]
+        app_pwd = decrypt_secret(conn_row["encrypted_app_password"])
+    return get_current_inbox_max_uid(gmail, app_pwd)
 
 # ==============================================================================
 # STATELESS SIGNED CSRF & CONFIGURATION HELPERS
@@ -491,21 +634,20 @@ def parse_famapp_email(subject: str, body_text: str, headers: dict):
     txn_match = re.search(r"Transaction ID\s*:\s*([A-Za-z0-9_\-]+)", normalized, re.IGNORECASE)
     txn_id = txn_match.group(1).strip() if txn_match else None
 
-    # UTR
+    # UTR (strictly required from email body)
     utr_match = re.search(r"UTR\s*:\s*([A-Za-z0-9_\-]+)", normalized, re.IGNORECASE)
     utr = utr_match.group(1).strip() if utr_match else None
-    if not utr and txn_id:
-        utr = txn_id  # Fallback if UTR missing
 
     # Date
     date_match = re.search(r"Date\s*:\s*([^\n\r]+)", normalized, re.IGNORECASE)
-    date_str = date_match.group(1).strip() if date_match else iso_now()
+    date_str = date_match.group(1).strip() if date_match else None
 
     return {
         "amount": amount,
+        "amount_dec": str(Decimal(raw_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
         "sender_name": sender_name,
         "txn_id": txn_id or f"TXN_{secrets.token_hex(6).upper()}",
-        "utr": utr or f"UTR_{secrets.token_hex(6).upper()}",
+        "utr": utr,
         "date_str": date_str,
         "raw_snippet": normalized[:250]
     }
@@ -579,36 +721,63 @@ def dispatch_webhook_async(order_id: str, status: str, amount: float, base_amoun
     t.start()
 
 # ==============================================================================
-# BACKGROUND IMAP WORKER & EXPIRY SCHEDULER (Section 5 & 7.1)
+# BACKGROUND IMAP WORKER & EXPIRY SCHEDULER (Strict UID + UTC Verification)
 # ==============================================================================
-def check_order_expiries():
-    """Marks pending orders that have passed expires_at as expired."""
-    now_str = iso_now()
-    with get_db() as db:
-        expired_orders = db.execute("""
-            SELECT * FROM orders WHERE status = 'pending' AND expires_at <= ?
-        """, (now_str,)).fetchall()
+def record_verify_log(db, order_id, email_uid, message_id, parsed_amount, parsed_utr, decision, reason):
+    db.execute("""
+        INSERT INTO verify_logs (created_at, order_id, email_uid, message_id, parsed_amount, parsed_utr, decision, reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (iso_now(), order_id, email_uid, message_id, parsed_amount, parsed_utr, decision, reason))
 
-        for o in expired_orders:
-            db.execute("UPDATE orders SET status = 'expired' WHERE id = ?", (o["id"],))
+def record_unmatched_payment(db, amount, sender_name, utr, txn_id, email_date, message_id, raw_snippet, reason):
+    now_iso = iso_now()
+    if utr:
+        db.execute("""
+            INSERT OR IGNORE INTO unmatched_payments (amount, sender_name, utr, txn_id, email_date, message_id, raw_snippet, reason, received_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (amount, sender_name, utr, txn_id, email_date, message_id, raw_snippet, reason, now_iso))
+    else:
+        db.execute("""
+            INSERT INTO unmatched_payments (amount, sender_name, utr, txn_id, email_date, message_id, raw_snippet, reason, received_at)
+            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)
+        """, (amount, sender_name, txn_id, email_date, message_id, raw_snippet, reason, now_iso))
+
+def check_order_expiries():
+    """Atomically marks overdue pending orders as expired and fires expired webhook once."""
+    now_dt = datetime.now(timezone.utc)
+    to_webhook = []
+    with db_lock:
+        with get_db() as db:
+            pending_rows = db.execute("SELECT * FROM orders WHERE status = 'pending'").fetchall()
+            for o in pending_rows:
+                exp_dt = parse_iso_utc(o["expires_at"])
+                if exp_dt is not None and exp_dt <= now_dt:
+                    cur = db.execute("UPDATE orders SET status = 'expired' WHERE id = ? AND status = 'pending'", (o["id"],))
+                    if cur.rowcount == 1 and o["callback_url"]:
+                        to_webhook.append(dict(o))
             db.commit()
-            if o["callback_url"]:
-                dispatch_webhook_async(
-                    order_id=o["id"],
-                    status="expired",
-                    amount=o["payable_amount"],
-                    base_amount=o["base_amount"],
-                    utr=None,
-                    txn_id=None,
-                    paid_at=None,
-                    note=o["note"],
-                    callback_url=o["callback_url"]
-                )
+
+    for o in to_webhook:
+        dispatch_webhook_async(
+            order_id=o["id"],
+            status="expired",
+            amount=o["payable_amount"],
+            base_amount=o["base_amount"],
+            utr=None,
+            txn_id=None,
+            paid_at=None,
+            note=o["note"],
+            callback_url=o["callback_url"]
+        )
 
 def poll_gmail_imap():
-    """Connects to Gmail via IMAP, searches recent emails, and verifies pending orders."""
+    """
+    Connects to Gmail IMAP, fetches ONLY UIDs strictly greater than pending orders'
+    baseline_uid, validates sender/auth, UTC timestamps (INTERNALDATE & Fam Date IST),
+    exact Decimal amount, and unique UTR. Marks at most one order paid per verified email.
+    """
     with get_db() as db:
-        pending_orders = db.execute("SELECT * FROM orders WHERE status = 'pending'").fetchall()
+        pending_orders = db.execute("SELECT * FROM orders WHERE status = 'pending' ORDER BY created_at ASC").fetchall()
         if not pending_orders:
             return  # Idle if no pending orders
 
@@ -622,51 +791,55 @@ def poll_gmail_imap():
     if not gmail or not app_password:
         return
 
+    min_baseline = min(int(o["baseline_uid"] or 0) for o in pending_orders)
+
     mail = None
     try:
         mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=12)
         mail.login(gmail, app_password)
         mail.select("INBOX")
 
-        # Search for recent unread or recent 15 minutes of messages
-        status, search_data = mail.search(None, "UNSEEN")
-        msg_ids = search_data[0].split()
+        # Search ONLY UIDs strictly after min_baseline; explicitly filter IMAP quirk
+        search_range = f"UID {min_baseline + 1}:*"
+        status, search_data = mail.uid("SEARCH", None, search_range)
+        raw_uids = search_data[0].split() if (status == "OK" and search_data and search_data[0]) else []
+        candidate_uids = sorted({int(u) for u in raw_uids if u.isdigit() and int(u) > min_baseline})
 
-        # If no unseen, check latest 15 messages in inbox
-        if not msg_ids:
-            status, all_data = mail.search(None, "ALL")
-            all_ids = all_data[0].split()
-            msg_ids = all_ids[-15:] if len(all_ids) > 15 else all_ids
-
-        for num in reversed(msg_ids):
-            status, data = mail.fetch(num, "(RFC822)")
-            if status != "OK" or not data or not data[0]:
-                continue
-
-            raw_email = data[0][1]
-            msg = email.message_from_bytes(raw_email)
-
-            msg_id = msg.get("Message-ID") or f"MSG_{hashlib.sha256(raw_email).hexdigest()[:20]}"
-            
-            # Idempotency check: have we already processed this message?
+        for uid in candidate_uids:
             with get_db() as db:
-                if db.execute("SELECT message_id FROM processed_emails WHERE message_id = ?", (msg_id,)).fetchone():
+                if db.execute("SELECT 1 FROM processed_emails WHERE uid = ?", (uid,)).fetchone():
                     continue
 
-            # Check Sender Domain for anti-spoofing
+            status, data = mail.uid("FETCH", str(uid), "(INTERNALDATE RFC822)")
+            if status != "OK" or not data:
+                continue
+
+            raw_email = None
+            meta_bytes = b""
+            for item in data:
+                if isinstance(item, tuple) and len(item) >= 2:
+                    if isinstance(item[0], (bytes, bytearray)):
+                        meta_bytes += item[0]
+                    if isinstance(item[1], (bytes, bytearray)):
+                        raw_email = item[1]
+                elif isinstance(item, (bytes, bytearray)):
+                    meta_bytes += item
+
+            if not raw_email:
+                continue
+
+            msg = email.message_from_bytes(raw_email)
+            msg_id = (msg.get("Message-ID") or f"MSG_{hashlib.sha256(raw_email).hexdigest()[:20]}").strip()
+
+            with get_db() as db:
+                if db.execute("SELECT 1 FROM processed_emails WHERE message_id = ? OR uid = ?", (msg_id, uid)).fetchone():
+                    continue
+
+            internaldate_utc = parse_imap_internaldate_utc(meta_bytes, msg)
             from_hdr = msg.get("From", "")
-            from_domain = from_hdr.split("@")[-1].replace(">", "").strip().lower()
-            if not any(from_domain.endswith(allowed) for allowed in ALLOWED_EMAIL_DOMAINS):
-                # Non-allowed sender, ignore
-                continue
+            parsed_addr = email.utils.parseaddr(from_hdr)[1].lower()
+            from_domain = parsed_addr.split("@")[-1].strip() if "@" in parsed_addr else from_hdr.split("@")[-1].replace(">", "").strip().lower()
 
-            # Check SPF/DKIM authentication header if present
-            auth_results = msg.get("Authentication-Results", "").lower()
-            if "dkim=fail" in auth_results or "spf=fail" in auth_results:
-                # Rejected spoofed email
-                continue
-
-            # Extract subject and body
             subject = ""
             raw_sub = msg.get("Subject", "")
             for part, enc in decode_header(raw_sub):
@@ -675,12 +848,40 @@ def poll_gmail_imap():
                 else:
                     subject += str(part)
 
+            now_iso = iso_now()
+
+            # 1. Sender domain verification
+            if not any(from_domain == allowed or from_domain.endswith("." + allowed) for allowed in ALLOWED_EMAIL_DOMAINS):
+                with db_lock:
+                    with get_db() as db:
+                        db.execute("""
+                            INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
+                            VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)
+                        """, (msg_id, uid, from_hdr, subject[:200], now_iso))
+                        record_verify_log(db, None, uid, msg_id, None, None, "ignored", "sender not allowed")
+                        db.commit()
+                continue
+
+            # 2. SPF / DKIM verification when header present
+            auth_results = msg.get("Authentication-Results", "").lower()
+            if "dkim=fail" in auth_results or "spf=fail" in auth_results:
+                with db_lock:
+                    with get_db() as db:
+                        db.execute("""
+                            INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
+                            VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)
+                        """, (msg_id, uid, from_hdr, subject[:200], now_iso))
+                        record_verify_log(db, None, uid, msg_id, None, None, "rejected", "sender auth failed (SPF/DKIM)")
+                        db.commit()
+                continue
+
+            # 3. Decode body text
             body_text = ""
             if msg.is_multipart():
                 for part in msg.walk():
                     ctype = part.get_content_type()
-                    cdisp = str(part.get("Content-Disposition"))
-                    if "attachment" in cdisp:
+                    cdisp = str(part.get("Content-Disposition") or "")
+                    if "attachment" in cdisp.lower():
                         continue
                     payload = part.get_payload(decode=True)
                     if not payload:
@@ -693,9 +894,9 @@ def poll_gmail_imap():
             else:
                 payload = msg.get_payload(decode=True)
                 if payload:
-                    body_text = clean_html_to_text(payload.decode(msg.get_content_charset() or "utf-8", errors="replace"))
+                    raw_text = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
+                    body_text = clean_html_to_text(raw_text) if msg.get_content_type() == "text/html" else raw_text
 
-            # Run through email parser registry
             parsed = None
             for parser_func in EMAIL_PARSER_REGISTRY:
                 parsed = parser_func(subject, body_text, dict(msg.items()))
@@ -703,73 +904,167 @@ def poll_gmail_imap():
                     break
 
             if not parsed:
+                with db_lock:
+                    with get_db() as db:
+                        db.execute("""
+                            INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
+                            VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)
+                        """, (msg_id, uid, from_hdr, subject[:200], now_iso))
+                        record_verify_log(db, None, uid, msg_id, None, None, "ignored", "not a FamApp credit notification")
+                        db.commit()
                 continue
 
             parsed_amount = parsed["amount"]
+            parsed_amount_dec = Decimal(parsed["amount_dec"])
             parsed_utr = parsed["utr"]
             parsed_txnid = parsed["txn_id"]
             parsed_sender = parsed["sender_name"]
-            parsed_date = parsed["date_str"]
+            parsed_date_str = parsed["date_str"]
+            fam_date_utc = parse_fam_ist_date_utc(parsed_date_str)
 
-            with get_db() as db:
-                # Find matching pending order
-                # Condition: payable_amount matches parsed amount exactly
-                matched_order = db.execute("""
-                    SELECT * FROM orders 
-                    WHERE status = 'pending' AND ABS(payable_amount - ?) < 0.005
-                    ORDER BY created_at ASC
-                    LIMIT 1
-                """, (parsed_amount,)).fetchone()
-
-                now_time_iso = iso_now()
-
-                if matched_order:
-                    # Check if UTR is already used by another order
-                    existing_utr = db.execute("SELECT id FROM orders WHERE utr = ?", (parsed_utr,)).fetchone()
-                    if existing_utr and existing_utr["id"] != matched_order["id"]:
-                        # Duplicate payment or conflicting UTR
+            # Require strict UTR extraction
+            if not parsed_utr:
+                with db_lock:
+                    with get_db() as db:
                         db.execute("""
-                            INSERT INTO unmatched_payments (amount, sender_name, utr, txn_id, email_date, message_id, raw_snippet, reason, received_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, 'Duplicate UTR already recorded', ?)
-                        """, (parsed_amount, parsed_sender, parsed_utr, parsed_txnid, parsed_date, msg_id, parsed["raw_snippet"], now_time_iso))
-                    else:
-                        # Success! Mark order as paid
+                            INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
+                            VALUES (?, ?, ?, ?, ?, NULL, ?, NULL)
+                        """, (msg_id, uid, from_hdr, subject[:200], now_iso, parsed_amount))
+                        record_verify_log(db, None, uid, msg_id, parsed_amount, None, "rejected", "missing UTR in email")
+                        record_unmatched_payment(db, parsed_amount, parsed_sender, None, parsed_txnid, parsed_date_str or now_iso, msg_id, parsed["raw_snippet"], "Missing UTR in email")
+                        db.commit()
+                continue
+
+            # Require valid server INTERNALDATE and valid parsed IST Date line (converted to UTC)
+            if internaldate_utc is None or fam_date_utc is None:
+                with db_lock:
+                    with get_db() as db:
                         db.execute("""
-                            UPDATE orders 
+                            INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
+                            VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
+                        """, (msg_id, uid, from_hdr, subject[:200], now_iso, parsed_amount, parsed_utr))
+                        record_verify_log(db, None, uid, msg_id, parsed_amount, parsed_utr, "rejected", "missing or invalid email timestamp")
+                        record_unmatched_payment(db, parsed_amount, parsed_sender, parsed_utr, parsed_txnid, parsed_date_str or now_iso, msg_id, parsed["raw_snippet"], "Missing or invalid email timestamp")
+                        db.commit()
+                continue
+
+            webhook_payload = None
+            with db_lock:
+                with get_db() as db:
+                    # Re-check processed_emails & UTR uniqueness inside transaction
+                    if db.execute("SELECT 1 FROM processed_emails WHERE message_id = ? OR uid = ?", (msg_id, uid)).fetchone():
+                        continue
+
+                    existing_utr_order = db.execute("SELECT id FROM orders WHERE utr = ?", (parsed_utr,)).fetchone()
+                    existing_utr_email = db.execute("SELECT message_id FROM processed_emails WHERE utr = ? AND matched_order_id IS NOT NULL", (parsed_utr,)).fetchone()
+                    if existing_utr_order or existing_utr_email:
+                        db.execute("""
+                            INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
+                            VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
+                        """, (msg_id, uid, from_hdr, subject[:200], now_iso, parsed_amount, parsed_utr))
+                        record_unmatched_payment(db, parsed_amount, parsed_sender, parsed_utr, parsed_txnid, parsed_date_str, msg_id, parsed["raw_snippet"], "Duplicate UTR already used")
+                        record_verify_log(db, existing_utr_order["id"] if existing_utr_order else None, uid, msg_id, parsed_amount, parsed_utr, "rejected", "duplicate UTR")
+                        db.commit()
+                        continue
+
+                    # Fetch pending orders ordered oldest first
+                    current_pending = db.execute("SELECT * FROM orders WHERE status = 'pending' ORDER BY created_at ASC").fetchall()
+
+                    matched_order = None
+                    last_reject_order_id = None
+                    last_reject_reason = None
+
+                    for o in current_pending:
+                        o_amt_dec = Decimal(str(o["payable_amount"])).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                        if o_amt_dec != parsed_amount_dec:
+                            continue
+
+                        o_baseline = int(o["baseline_uid"] or 0)
+                        if uid <= o_baseline:
+                            last_reject_order_id = o["id"]
+                            last_reject_reason = "uid <= baseline"
+                            continue
+
+                        o_created_utc = parse_iso_utc(o["created_at"])
+                        o_expires_utc = parse_iso_utc(o["expires_at"])
+                        if o_created_utc is None or o_expires_utc is None:
+                            last_reject_order_id = o["id"]
+                            last_reject_reason = "invalid order timestamps"
+                            continue
+
+                        min_allowed = o_created_utc - timedelta(seconds=30)
+                        if internaldate_utc < min_allowed or fam_date_utc < min_allowed:
+                            last_reject_order_id = o["id"]
+                            last_reject_reason = "older than order"
+                            continue
+
+                        if internaldate_utc > o_expires_utc or fam_date_utc > o_expires_utc:
+                            last_reject_order_id = o["id"]
+                            last_reject_reason = "arrived after expiry"
+                            continue
+
+                        matched_order = o
+                        break
+
+                    if matched_order:
+                        cur = db.execute("""
+                            UPDATE orders
                             SET status = 'paid', utr = ?, txn_id = ?, paid_at = ?
-                            WHERE id = ?
-                        """, (parsed_utr, parsed_txnid, now_time_iso, matched_order["id"]))
+                            WHERE id = ? AND status = 'pending'
+                        """, (parsed_utr, parsed_txnid, now_iso, matched_order["id"]))
 
+                        if cur.rowcount == 1:
+                            db.execute("""
+                                INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (msg_id, uid, from_hdr, subject[:200], now_iso, matched_order["id"], parsed_amount, parsed_utr))
+                            record_verify_log(db, matched_order["id"], uid, msg_id, parsed_amount, parsed_utr, "matched", "verified payment")
+                            db.commit()
+                            if matched_order["callback_url"]:
+                                webhook_payload = dict(matched_order)
+                        else:
+                            db.execute("""
+                                INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
+                                VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
+                            """, (msg_id, uid, from_hdr, subject[:200], now_iso, parsed_amount, parsed_utr))
+                            record_verify_log(db, matched_order["id"], uid, msg_id, parsed_amount, parsed_utr, "rejected", "order no longer pending")
+                            record_unmatched_payment(db, parsed_amount, parsed_sender, parsed_utr, parsed_txnid, parsed_date_str, msg_id, parsed["raw_snippet"], "Order no longer pending")
+                            db.commit()
+                    else:
+                        if not last_reject_reason:
+                            # Check if an expired order matched this exact amount cleanly
+                            recent_exp = db.execute("SELECT * FROM orders WHERE status = 'expired' ORDER BY created_at DESC LIMIT 20").fetchall()
+                            for eo in recent_exp:
+                                eo_amt_dec = Decimal(str(eo["payable_amount"])).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                                if eo_amt_dec == parsed_amount_dec and uid > int(eo["baseline_uid"] or 0):
+                                    eo_exp_utc = parse_iso_utc(eo["expires_at"])
+                                    eo_cre_utc = parse_iso_utc(eo["created_at"])
+                                    if eo_cre_utc and eo_exp_utc and internaldate_utc >= (eo_cre_utc - timedelta(seconds=30)):
+                                        last_reject_order_id = eo["id"]
+                                        last_reject_reason = "arrived after expiry" if internaldate_utc > eo_exp_utc else "order already expired"
+                                        break
+                        final_reason = last_reject_reason or "amount mismatch"
+                        final_decision = "rejected" if last_reject_reason else "unmatched"
                         db.execute("""
-                            INSERT INTO processed_emails (message_id, sender, subject, received_at, matched_order_id, amount, utr)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (msg_id, from_hdr, subject, now_time_iso, matched_order["id"], parsed_amount, parsed_utr))
+                            INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
+                            VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
+                        """, (msg_id, uid, from_hdr, subject[:200], now_iso, parsed_amount, parsed_utr))
+                        record_unmatched_payment(db, parsed_amount, parsed_sender, parsed_utr, parsed_txnid, parsed_date_str, msg_id, parsed["raw_snippet"], final_reason)
+                        record_verify_log(db, last_reject_order_id, uid, msg_id, parsed_amount, parsed_utr, final_decision, final_reason)
                         db.commit()
 
-                        if matched_order["callback_url"]:
-                            dispatch_webhook_async(
-                                order_id=matched_order["id"],
-                                status="paid",
-                                amount=matched_order["payable_amount"],
-                                base_amount=matched_order["base_amount"],
-                                utr=parsed_utr,
-                                txn_id=parsed_txnid,
-                                paid_at=now_time_iso,
-                                note=matched_order["note"],
-                                callback_url=matched_order["callback_url"]
-                            )
-                else:
-                    # No pending order matched (arrived late, wrong amount, etc.)
-                    db.execute("""
-                        INSERT INTO unmatched_payments (amount, sender_name, utr, txn_id, email_date, message_id, raw_snippet, reason, received_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 'No pending order matching amount', ?)
-                    """, (parsed_amount, parsed_sender, parsed_utr, parsed_txnid, parsed_date, msg_id, parsed["raw_snippet"], now_time_iso))
-
-                    db.execute("""
-                        INSERT INTO processed_emails (message_id, sender, subject, received_at, matched_order_id, amount, utr)
-                        VALUES (?, ?, ?, ?, NULL, ?, ?)
-                    """, (msg_id, from_hdr, subject, now_time_iso, parsed_amount, parsed_utr))
-                    db.commit()
+            if webhook_payload:
+                dispatch_webhook_async(
+                    order_id=webhook_payload["id"],
+                    status="paid",
+                    amount=webhook_payload["payable_amount"],
+                    base_amount=webhook_payload["base_amount"],
+                    utr=parsed_utr,
+                    txn_id=parsed_txnid,
+                    paid_at=now_iso,
+                    note=webhook_payload["note"],
+                    callback_url=webhook_payload["callback_url"]
+                )
 
         # Update last connection health
         with get_db() as db:
@@ -804,6 +1099,10 @@ def start_background_worker_once():
     global _worker_started
     if not _worker_started:
         _worker_started = True
+        try:
+            check_order_expiries()
+        except Exception:
+            pass
         worker_thread = threading.Thread(target=background_worker_loop, daemon=True)
         worker_thread.start()
 
@@ -983,7 +1282,7 @@ def generate_ai_prompt_text(stack: str = "python", api_key: str = None, webhook_
 
     selected_guide = stack_guidelines.get(stack, stack_guidelines["generic"])
 
-    prompt = f"""You are a senior full-stack developer. Integrate the following private personal UPI payment gateway into my project.
+    prompt = f"""You are a senior full-stack developer. Integrate the MinorUPI private personal UPI payment gateway into my project.
 
 ### Gateway Credentials & Endpoints:
 - Base URL: {base}
@@ -1057,47 +1356,19 @@ Ask me for project details (framework, where to place the pay button, what to do
     return prompt.strip()
 
 # ==============================================================================
-# PUBLIC ROUTING & FRONTEND TEMPLATES (Section 3 & 4)
+# PUBLIC ROUTING & FRONTEND TEMPLATES
 # ==============================================================================
 @app.route("/")
-def route_root():
-    with get_db() as db:
-        admin_row = db.execute("SELECT id FROM admin LIMIT 1").fetchone()
-        if not admin_row:
-            return redirect("/setup")
-    if "admin_id" in session:
-        return redirect("/dashboard")
-    return redirect("/login")
-
 @app.route("/setup")
-def route_setup():
-    with get_db() as db:
-        if db.execute("SELECT id FROM admin LIMIT 1").fetchone():
-            return redirect("/login")
-    return send_file(os.path.join(BASE_DIR, "index.html"))
-
 @app.route("/login")
-def route_login():
-    with get_db() as db:
-        if not db.execute("SELECT id FROM admin LIMIT 1").fetchone():
-            return redirect("/setup")
-    if "admin_id" in session:
-        return redirect("/dashboard")
-    return send_file(os.path.join(BASE_DIR, "index.html"))
-
+@app.route("/dashboard")
 @app.route("/docs")
-def route_docs():
-    return send_file(os.path.join(BASE_DIR, "index.html"))
+def route_spa():
+    return send_file(os.path.join(BASE_DIR, "dashboard.html"))
 
 @app.route("/pay/<order_id>")
 def route_checkout(order_id):
     return send_file(os.path.join(BASE_DIR, "index.html"))
-
-@app.route("/dashboard")
-def route_dashboard():
-    if "admin_id" not in session:
-        return redirect("/login")
-    return send_file(os.path.join(BASE_DIR, "dashboard.html"))
 
 @app.route("/ai-prompt.txt")
 def route_ai_prompt_txt():
@@ -1107,7 +1378,6 @@ def route_ai_prompt_txt():
     
     api_key_str = None
     if include_key and "admin_id" in session:
-        # Check if there is an active key prefix or pass placeholder
         with get_db() as db:
             k = db.execute("SELECT prefix FROM api_keys WHERE revoked = 0 ORDER BY id DESC LIMIT 1").fetchone()
             if k:
@@ -1118,8 +1388,22 @@ def route_ai_prompt_txt():
     return Response(prompt, mimetype="text/plain; charset=utf-8")
 
 # ==============================================================================
-# CSRF TOKEN ENDPOINT & PUBLIC API / CHECKOUT ENDPOINTS (Section 5, 6, 8.1)
+# SESSION STATE, CSRF TOKEN & PUBLIC CHECKOUT ENDPOINTS
 # ==============================================================================
+@app.route("/api/session/state", methods=["GET"])
+def api_session_state():
+    with get_db() as db:
+        has_admin = bool(db.execute("SELECT id FROM admin LIMIT 1").fetchone())
+        logged_in = False
+        if "admin_id" in session:
+            logged_in = bool(db.execute("SELECT id FROM admin WHERE id = ?", (session["admin_id"],)).fetchone())
+
+    return jsonify({
+        "has_admin": has_admin,
+        "logged_in": logged_in,
+        "configured": is_gateway_configured()
+    })
+
 @app.route("/api/csrf", methods=["GET"])
 def api_get_csrf():
     return jsonify({
@@ -1127,53 +1411,82 @@ def api_get_csrf():
         "token": generate_csrf_token()
     })
 
+def _evaluate_order_expiry(db, order_row):
+    """Returns (order_dict, server_now_dt, remaining_seconds) and expires atomically if overdue."""
+    now_dt = datetime.now(timezone.utc)
+    exp_dt = parse_iso_utc(order_row["expires_at"])
+    remaining_seconds = max(0, int((exp_dt - now_dt).total_seconds())) if exp_dt else 0
+    order_dict = dict(order_row)
+    expired_webhook = False
+
+    if remaining_seconds == 0 and order_dict["status"] == "pending":
+        cur = db.execute("UPDATE orders SET status = 'expired' WHERE id = ? AND status = 'pending'", (order_dict["id"],))
+        db.commit()
+        if cur.rowcount == 1:
+            order_dict["status"] = "expired"
+            expired_webhook = bool(order_dict.get("callback_url"))
+        else:
+            refreshed = db.execute("SELECT * FROM orders WHERE id = ?", (order_dict["id"],)).fetchone()
+            if refreshed:
+                order_dict = dict(refreshed)
+
+    return order_dict, now_dt, remaining_seconds, expired_webhook
+
 @app.route("/api/public/order/<order_id>")
 def api_public_order(order_id):
-    with get_db() as db:
-        order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
-        if not order:
-            return jsonify({"success": False, "error": {"code": "ORDER_NOT_FOUND", "message": "Order not found"}}), 404
-
-        # Block checkout if merchant has not configured UPI & Gmail (Bug 2)
-        if order["status"] == "pending" and not is_gateway_configured():
-            return jsonify({
-                "success": False,
-                "error": {
-                    "code": "NOT_CONFIGURED",
-                    "message": "Merchant is not configured / temporarily unavailable"
-                }
-            }), 503
-        
-        # Calculate seconds remaining until expiry
-        try:
-            exp_dt = datetime.fromisoformat(order["expires_at"].replace("Z", "+00:00"))
-            now_dt = datetime.now(timezone.utc)
-            seconds_left = max(0, int((exp_dt - now_dt).total_seconds()))
-        except Exception:
-            seconds_left = 0
-
-        # Auto-expire if time has passed
-        if seconds_left == 0 and order["status"] == "pending":
-            db.execute("UPDATE orders SET status = 'expired' WHERE id = ?", (order_id,))
-            db.commit()
+    expired_webhook_order = None
+    with db_lock:
+        with get_db() as db:
             order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+            if not order:
+                return jsonify({"success": False, "error": {"code": "ORDER_NOT_FOUND", "message": "Order not found"}}), 404
 
-    pay_data = generate_upi_payment_data(order_id, order["payable_amount"])
+            # Block checkout if merchant has not configured UPI & Gmail
+            if order["status"] == "pending" and not is_gateway_configured():
+                return jsonify({
+                    "success": False,
+                    "error": {
+                        "code": "NOT_CONFIGURED",
+                        "message": "Merchant is not configured / temporarily unavailable"
+                    }
+                }), 503
+
+            order_dict, now_dt, remaining_seconds, should_wh = _evaluate_order_expiry(db, order)
+            if should_wh:
+                expired_webhook_order = order_dict
+
+    if expired_webhook_order:
+        dispatch_webhook_async(
+            order_id=expired_webhook_order["id"],
+            status="expired",
+            amount=expired_webhook_order["payable_amount"],
+            base_amount=expired_webhook_order["base_amount"],
+            utr=None,
+            txn_id=None,
+            paid_at=None,
+            note=expired_webhook_order["note"],
+            callback_url=expired_webhook_order["callback_url"]
+        )
+
+    pay_data = generate_upi_payment_data(order_id, order_dict["payable_amount"])
     return jsonify({
         "success": True,
+        "server_now": now_dt.isoformat(),
         "order": {
-            "order_id": order["id"],
-            "base_amount": order["base_amount"],
-            "payable_amount": order["payable_amount"],
-            "status": order["status"],
-            "fail_reason": order["fail_reason"],
-            "utr": order["utr"],
-            "txn_id": order["txn_id"],
-            "created_at": order["created_at"],
-            "expires_at": order["expires_at"],
-            "seconds_left": seconds_left,
-            "redirect_url": order["redirect_url"],
-            "note": order["note"],
+            "order_id": order_dict["id"],
+            "base_amount": order_dict["base_amount"],
+            "payable_amount": order_dict["payable_amount"],
+            "status": order_dict["status"],
+            "fail_reason": order_dict["fail_reason"],
+            "utr": order_dict["utr"],
+            "txn_id": order_dict["txn_id"],
+            "created_at": order_dict["created_at"],
+            "expires_at": order_dict["expires_at"],
+            "server_now": now_dt.isoformat(),
+            "remaining_seconds": remaining_seconds,
+            "seconds_left": remaining_seconds,
+            "redirect_url": order_dict["redirect_url"],
+            "note": order_dict["note"],
             "merchant_name": pay_data["merchant_name"],
             "upi_id": pay_data["upi_id"],
             "upi_link": pay_data["upi_link"],
@@ -1183,44 +1496,51 @@ def api_public_order(order_id):
 
 @app.route("/api/public/status/<order_id>")
 def api_public_status(order_id):
-    with get_db() as db:
-        order = db.execute("SELECT id, status, payable_amount, utr, redirect_url, expires_at, fail_reason FROM orders WHERE id = ?", (order_id,)).fetchone()
-        if not order:
-            return jsonify({"success": False, "error": {"code": "ORDER_NOT_FOUND", "message": "Order not found"}}), 404
+    expired_webhook_order = None
+    with db_lock:
+        with get_db() as db:
+            order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+            if not order:
+                return jsonify({"success": False, "error": {"code": "ORDER_NOT_FOUND", "message": "Order not found"}}), 404
 
-        if order["status"] == "pending" and not is_gateway_configured():
-            return jsonify({
-                "success": False,
-                "error": {
-                    "code": "NOT_CONFIGURED",
-                    "message": "Merchant is not configured / temporarily unavailable"
-                }
-            }), 503
+            if order["status"] == "pending" and not is_gateway_configured():
+                return jsonify({
+                    "success": False,
+                    "error": {
+                        "code": "NOT_CONFIGURED",
+                        "message": "Merchant is not configured / temporarily unavailable"
+                    }
+                }), 503
 
-        try:
-            exp_dt = datetime.fromisoformat(order["expires_at"].replace("Z", "+00:00"))
-            now_dt = datetime.now(timezone.utc)
-            seconds_left = max(0, int((exp_dt - now_dt).total_seconds()))
-        except Exception:
-            seconds_left = 0
+            order_dict, now_dt, remaining_seconds, should_wh = _evaluate_order_expiry(db, order)
+            if should_wh:
+                expired_webhook_order = order_dict
 
-        # Auto-expire
-        if seconds_left == 0 and order["status"] == "pending":
-            db.execute("UPDATE orders SET status = 'expired' WHERE id = ?", (order_id,))
-            db.commit()
-            order_status = "expired"
-        else:
-            order_status = order["status"]
+    if expired_webhook_order:
+        dispatch_webhook_async(
+            order_id=expired_webhook_order["id"],
+            status="expired",
+            amount=expired_webhook_order["payable_amount"],
+            base_amount=expired_webhook_order["base_amount"],
+            utr=None,
+            txn_id=None,
+            paid_at=None,
+            note=expired_webhook_order["note"],
+            callback_url=expired_webhook_order["callback_url"]
+        )
 
     return jsonify({
         "success": True,
-        "order_id": order["id"],
-        "status": order_status,
-        "payable_amount": order["payable_amount"],
-        "utr": order["utr"],
-        "redirect_url": order["redirect_url"],
-        "seconds_left": seconds_left,
-        "fail_reason": order["fail_reason"]
+        "order_id": order_dict["id"],
+        "status": order_dict["status"],
+        "payable_amount": order_dict["payable_amount"],
+        "utr": order_dict["utr"],
+        "redirect_url": order_dict["redirect_url"],
+        "expires_at": order_dict["expires_at"],
+        "server_now": now_dt.isoformat(),
+        "remaining_seconds": remaining_seconds,
+        "seconds_left": remaining_seconds,
+        "fail_reason": order_dict["fail_reason"]
     })
 
 @app.route("/api/public/qr/<order_id>.png")
@@ -1286,6 +1606,7 @@ def api_v1_create_order():
         return jsonify({"success": False, "error": {"code": "NO_SLOT_AVAILABLE", "message": str(e)}}), 409
 
     order_id = custom_id if custom_id else f"ORD-{secrets.token_hex(4).upper()}"
+    baseline_uid = fetch_connection_baseline_uid()
     now_dt = datetime.now(timezone.utc)
     created_at = now_dt.isoformat()
     expires_at = (now_dt + timedelta(minutes=expiry_minutes)).isoformat()
@@ -1296,9 +1617,9 @@ def api_v1_create_order():
             return jsonify({"success": False, "error": {"code": "DUPLICATE_ID", "message": "order_id already exists"}}), 409
 
         db.execute("""
-            INSERT INTO orders (id, source, base_amount, payable_amount, status, created_at, expires_at, callback_url, redirect_url, note)
-            VALUES (?, 'api', ?, ?, 'pending', ?, ?, ?, ?, ?)
-        """, (order_id, base_amount, payable_amount, created_at, expires_at, callback_url, redirect_url, note))
+            INSERT INTO orders (id, source, base_amount, payable_amount, status, baseline_uid, created_at, expires_at, callback_url, redirect_url, note)
+            VALUES (?, 'api', ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+        """, (order_id, base_amount, payable_amount, baseline_uid, created_at, expires_at, callback_url, redirect_url, note))
         db.commit()
 
     pay_data = generate_upi_payment_data(order_id, payable_amount)
@@ -1325,6 +1646,7 @@ def api_v1_get_order(order_id):
     if not is_authed:
         return jsonify({"success": False, "error": auth_res}), 401
 
+    check_order_expiries()
     with get_db() as db:
         order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
         if not order:
@@ -1356,29 +1678,31 @@ def api_v1_cancel_order(order_id):
     if not is_authed:
         return jsonify({"success": False, "error": auth_res}), 401
 
-    with get_db() as db:
-        order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
-        if not order:
-            return jsonify({"success": False, "error": {"code": "ORDER_NOT_FOUND", "message": "Order not found"}}), 404
+    with db_lock:
+        with get_db() as db:
+            order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+            if not order:
+                return jsonify({"success": False, "error": {"code": "ORDER_NOT_FOUND", "message": "Order not found"}}), 404
 
-        if order["status"] != "pending":
-            return jsonify({"success": False, "error": {"code": "INVALID_STATE", "message": f"Cannot cancel order with status '{order['status']}'"}}), 400
+            cur = db.execute("UPDATE orders SET status = 'cancelled' WHERE id = ? AND status = 'pending'", (order_id,))
+            db.commit()
+            if cur.rowcount == 0:
+                refreshed = db.execute("SELECT status FROM orders WHERE id = ?", (order_id,)).fetchone()
+                st = refreshed["status"] if refreshed else order["status"]
+                return jsonify({"success": False, "error": {"code": "INVALID_STATE", "message": f"Cannot cancel order with status '{st}'"}}), 400
 
-        db.execute("UPDATE orders SET status = 'cancelled' WHERE id = ?", (order_id,))
-        db.commit()
-
-        if order["callback_url"]:
-            dispatch_webhook_async(
-                order_id=order["id"],
-                status="cancelled",
-                amount=order["payable_amount"],
-                base_amount=order["base_amount"],
-                utr=None,
-                txn_id=None,
-                paid_at=None,
-                note=order["note"],
-                callback_url=order["callback_url"]
-            )
+    if order["callback_url"]:
+        dispatch_webhook_async(
+            order_id=order["id"],
+            status="cancelled",
+            amount=order["payable_amount"],
+            base_amount=order["base_amount"],
+            utr=None,
+            txn_id=None,
+            paid_at=None,
+            note=order["note"],
+            callback_url=order["callback_url"]
+        )
 
     return jsonify({"success": True, "message": "Order cancelled successfully"})
 
@@ -1388,6 +1712,7 @@ def api_v1_list_orders():
     if not is_authed:
         return jsonify({"success": False, "error": auth_res}), 401
 
+    check_order_expiries()
     status_filter = request.args.get("status")
     page = max(1, int(request.args.get("page", 1)))
     limit = min(100, max(1, int(request.args.get("limit", 20))))
@@ -1664,6 +1989,7 @@ def api_admin_disconnect():
 @app.route("/api/admin/stats")
 @require_admin
 def api_admin_stats():
+    check_order_expiries()
     with get_db() as db:
         # Aggregate order counters
         status_counts = dict(db.execute("SELECT status, COUNT(*) as c FROM orders GROUP BY status").fetchall())
@@ -1719,6 +2045,7 @@ def api_admin_stats():
 @app.route("/api/admin/orders", methods=["GET"])
 @require_admin
 def api_admin_get_orders():
+    check_order_expiries()
     status = request.args.get("status")
     source = request.args.get("source")
     search = request.args.get("search", "").strip()
@@ -1747,8 +2074,10 @@ def api_admin_get_orders():
         total = db.execute(count_query, params).fetchone()["c"]
         rows = db.execute(query, params_for_list).fetchall()
 
+    now_iso = iso_now()
     return jsonify({
         "success": True,
+        "server_now": now_iso,
         "orders": [dict(r) for r in rows],
         "total": total,
         "page": page,
@@ -1794,15 +2123,16 @@ def api_admin_create_payment_link():
         return jsonify({"success": False, "error": {"code": "NO_SLOT", "message": str(e)}}), 409
 
     order_id = f"PL-{secrets.token_hex(4).upper()}"
+    baseline_uid = fetch_connection_baseline_uid()
     now_dt = datetime.now(timezone.utc)
     created_at = now_dt.isoformat()
     expires_at = (now_dt + timedelta(minutes=expiry_minutes)).isoformat()
 
     with get_db() as db:
         db.execute("""
-            INSERT INTO orders (id, source, base_amount, payable_amount, status, created_at, expires_at, redirect_url, note)
-            VALUES (?, 'link', ?, ?, 'pending', ?, ?, ?, ?)
-        """, (order_id, base_amount, payable_amount, created_at, expires_at, redirect_url, note))
+            INSERT INTO orders (id, source, base_amount, payable_amount, status, baseline_uid, created_at, expires_at, redirect_url, note)
+            VALUES (?, 'link', ?, ?, 'pending', ?, ?, ?, ?, ?)
+        """, (order_id, base_amount, payable_amount, baseline_uid, created_at, expires_at, redirect_url, note))
         db.commit()
 
     payment_url = f"{get_base_url()}/pay/{order_id}"
@@ -1821,18 +2151,21 @@ def api_admin_cancel_order(order_id):
     if not verify_csrf():
         return csrf_error_response()
 
-    with get_db() as db:
-        order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
-        if not order:
-            return jsonify({"success": False, "error": {"code": "NOT_FOUND", "message": "Order not found"}}), 404
-        if order["status"] != "pending":
-            return jsonify({"success": False, "error": {"code": "INVALID_STATE", "message": f"Order is already {order['status']}"}}), 400
+    with db_lock:
+        with get_db() as db:
+            order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+            if not order:
+                return jsonify({"success": False, "error": {"code": "NOT_FOUND", "message": "Order not found"}}), 404
 
-        db.execute("UPDATE orders SET status = 'cancelled' WHERE id = ?", (order_id,))
-        db.commit()
+            cur = db.execute("UPDATE orders SET status = 'cancelled' WHERE id = ? AND status = 'pending'", (order_id,))
+            db.commit()
+            if cur.rowcount == 0:
+                refreshed = db.execute("SELECT status FROM orders WHERE id = ?", (order_id,)).fetchone()
+                st = refreshed["status"] if refreshed else order["status"]
+                return jsonify({"success": False, "error": {"code": "INVALID_STATE", "message": f"Order is already {st}"}}), 400
 
-        if order["callback_url"]:
-            dispatch_webhook_async(order_id, "cancelled", order["payable_amount"], order["base_amount"], None, None, None, order["note"], order["callback_url"])
+    if order["callback_url"]:
+        dispatch_webhook_async(order_id, "cancelled", order["payable_amount"], order["base_amount"], None, None, None, order["note"], order["callback_url"])
 
     return jsonify({"success": True, "message": "Order cancelled"})
 
@@ -1851,12 +2184,12 @@ def api_admin_delete_order(order_id):
 @require_admin
 def api_admin_export_csv():
     with get_db() as db:
-        rows = db.execute("SELECT id, source, base_amount, payable_amount, status, utr, txn_id, created_at, paid_at, note FROM orders ORDER BY created_at DESC").fetchall()
+        rows = db.execute("SELECT id, source, base_amount, payable_amount, status, utr, txn_id, created_at, expires_at, paid_at, note FROM orders ORDER BY created_at DESC").fetchall()
 
-    csv_lines = ["Order ID,Source,Base Amount,Payable Amount,Status,UTR,Transaction ID,Created At,Paid At,Note"]
+    csv_lines = ["Order ID,Source,Base Amount,Payable Amount,Status,UTR,Transaction ID,Created At,Expires At,Paid At,Note"]
     for r in rows:
         note_clean = (r["note"] or "").replace('"', '""')
-        csv_lines.append(f'"{r["id"]}","{r["source"]}","{r["base_amount"]}","{r["payable_amount"]}","{r["status"]}","{r["utr"] or ""}","{r["txn_id"] or ""}","{r["created_at"]}","{r["paid_at"] or ""}","{note_clean}"')
+        csv_lines.append(f'"{r["id"]}","{r["source"]}","{r["base_amount"]}","{r["payable_amount"]}","{r["status"]}","{r["utr"] or ""}","{r["txn_id"] or ""}","{r["created_at"]}","{r["expires_at"]}","{r["paid_at"] or ""}","{note_clean}"')
 
     output = "\n".join(csv_lines)
     resp = make_response(output)
@@ -1870,6 +2203,13 @@ def api_admin_unmatched():
     with get_db() as db:
         rows = db.execute("SELECT * FROM unmatched_payments ORDER BY received_at DESC LIMIT 50").fetchall()
     return jsonify({"success": True, "unmatched": [dict(r) for r in rows]})
+
+@app.route("/api/admin/verify-logs")
+@require_admin
+def api_admin_verify_logs():
+    with get_db() as db:
+        rows = db.execute("SELECT * FROM verify_logs ORDER BY id DESC LIMIT 50").fetchall()
+    return jsonify({"success": True, "logs": [dict(r) for r in rows]})
 
 # ==============================================================================
 # DASHBOARD API KEYS & WEBHOOK SETTINGS (Section 4.5)
@@ -1993,6 +2333,7 @@ def api_admin_simulate_email():
     if not verify_csrf():
         return csrf_error_response()
 
+    check_order_expiries()
     data = request.get_json(silent=True) or {}
     email_text = data.get("email_text", "").strip()
 
@@ -2001,7 +2342,7 @@ def api_admin_simulate_email():
         if not parsed:
             return jsonify({"success": False, "error": {"code": "PARSE_FAILED", "message": "Could not parse email text. Check format."}}), 400
         amount = parsed["amount"]
-        utr = parsed["utr"]
+        utr = parsed["utr"] or f"SIM_{secrets.token_hex(6).upper()}"
         txn_id = parsed["txn_id"]
         sender_name = parsed["sender_name"]
     else:
@@ -2014,53 +2355,59 @@ def api_admin_simulate_email():
             return jsonify({"success": False, "error": {"code": "INVALID_PARAM", "message": "Invalid amount"}}), 400
 
     now_time = iso_now()
-    with get_db() as db:
-        matched_order = db.execute("""
-            SELECT * FROM orders 
-            WHERE status = 'pending' AND ABS(payable_amount - ?) < 0.005
-            ORDER BY created_at ASC
-            LIMIT 1
-        """, (amount,)).fetchone()
+    sim_msg_id = f"SIM_{secrets.token_hex(12)}"
+    with db_lock:
+        with get_db() as db:
+            if db.execute("SELECT id FROM orders WHERE utr = ?", (utr,)).fetchone():
+                record_verify_log(db, None, 0, sim_msg_id, amount, utr, "rejected", "duplicate UTR (simulated)")
+                db.commit()
+                return jsonify({"success": False, "error": {"code": "DUPLICATE_UTR", "message": "Duplicate UTR already recorded"}}), 409
 
-        if matched_order:
-            db.execute("""
-                UPDATE orders 
-                SET status = 'paid', utr = ?, txn_id = ?, paid_at = ?
-                WHERE id = ?
-            """, (utr, txn_id, now_time, matched_order["id"]))
+            matched_order = db.execute("""
+                SELECT * FROM orders
+                WHERE status = 'pending' AND ABS(payable_amount - ?) < 0.005
+                ORDER BY created_at ASC
+                LIMIT 1
+            """, (amount,)).fetchone()
 
-            db.execute("""
-                INSERT INTO processed_emails (message_id, sender, subject, received_at, matched_order_id, amount, utr)
-                VALUES (?, 'simulate@famapp.in', 'Simulated Email', ?, ?, ?, ?)
-            """, (f"SIM_{secrets.token_hex(12)}", now_time, matched_order["id"], amount, utr))
-            db.commit()
+            if matched_order:
+                cur = db.execute("""
+                    UPDATE orders
+                    SET status = 'paid', utr = ?, txn_id = ?, paid_at = ?
+                    WHERE id = ? AND status = 'pending'
+                """, (utr, txn_id, now_time, matched_order["id"]))
+                if cur.rowcount == 1:
+                    db.execute("""
+                        INSERT INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
+                        VALUES (?, NULL, 'simulate@famapp.in', 'Simulated Email', ?, ?, ?, ?)
+                    """, (sim_msg_id, now_time, matched_order["id"], amount, utr))
+                    record_verify_log(db, matched_order["id"], 0, sim_msg_id, amount, utr, "matched", "verified payment (simulated)")
+                    db.commit()
 
-            if matched_order["callback_url"]:
-                dispatch_webhook_async(
-                    order_id=matched_order["id"],
-                    status="paid",
-                    amount=matched_order["payable_amount"],
-                    base_amount=matched_order["base_amount"],
-                    utr=utr,
-                    txn_id=txn_id,
-                    paid_at=now_time,
-                    note=matched_order["note"],
-                    callback_url=matched_order["callback_url"]
-                )
+                    if matched_order["callback_url"]:
+                        dispatch_webhook_async(
+                            order_id=matched_order["id"],
+                            status="paid",
+                            amount=matched_order["payable_amount"],
+                            base_amount=matched_order["base_amount"],
+                            utr=utr,
+                            txn_id=txn_id,
+                            paid_at=now_time,
+                            note=matched_order["note"],
+                            callback_url=matched_order["callback_url"]
+                        )
 
-            return jsonify({
-                "success": True,
-                "matched": True,
-                "order_id": matched_order["id"],
-                "amount": amount,
-                "utr": utr,
-                "message": f"Successfully verified order {matched_order['id']} for ₹{amount:.2f}"
-            })
-        else:
-            db.execute("""
-                INSERT INTO unmatched_payments (amount, sender_name, utr, txn_id, email_date, message_id, raw_snippet, reason, received_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'Simulated unmatched email', 'No pending order matching amount', ?)
-            """, (amount, sender_name, utr, txn_id, now_time, f"SIM_{secrets.token_hex(12)}", now_time))
+                    return jsonify({
+                        "success": True,
+                        "matched": True,
+                        "order_id": matched_order["id"],
+                        "amount": amount,
+                        "utr": utr,
+                        "message": f"Successfully verified order {matched_order['id']} for ₹{amount:.2f}"
+                    })
+
+            record_unmatched_payment(db, amount, sender_name, utr, txn_id, now_time, sim_msg_id, "Simulated unmatched email", "No pending order matching amount")
+            record_verify_log(db, None, 0, sim_msg_id, amount, utr, "unmatched", "amount mismatch (simulated)")
             db.commit()
 
             return jsonify({
