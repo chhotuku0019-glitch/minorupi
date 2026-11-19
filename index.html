@@ -3,36 +3,68 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>MinorUPI — UPI Checkout</title>
-  <meta name="description" content="MinorUPI: Fast, secure direct UPI checkout with instant automated verification.">
-  <meta property="og:title" content="MinorUPI — UPI Checkout">
-  <meta property="og:description" content="Complete your direct UPI payment via QR or UPI app with MinorUPI.">
+  <title>MinorUPI — Private UPI Gateway</title>
+  <meta name="description" content="MinorUPI: Fast direct UPI checkout and self-hosted private UPI payment gateway with automated verification.">
+  <meta property="og:title" content="MinorUPI — Private UPI Gateway">
+  <meta property="og:description" content="Complete direct UPI payments via QR or UPI app with automated verification.">
   <meta property="og:type" content="website">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <style>
+    /* ==========================================================================
+       GLOBAL VARIABLES & RESET
+       ========================================================================== */
     :root {
-      --bg-page: #dbe4ee;
-      --bg-card: #eef2f6;
-      --bg-card-inner: #ffffff;
-      --blue-accent: #1d4ed8;
-      --blue-accent-hover: #1e40af;
-      --blue-glow: rgba(29, 78, 216, 0.25);
-      --border-color: #cbd5e1;
+      --s-1: 4px;
+      --s-2: 8px;
+      --s-3: 12px;
+      --s-4: 16px;
+      --s-6: 24px;
+
+      --bg-page: #f4f7fb;
+      --bg-surface: #ffffff;
+      --bg-card-inner: #f8fafc;
+      --bg-drawer: #ffffff;
+      --border-color: #e2e8f0;
+      --border-subtle: rgba(15, 23, 42, 0.06);
       --text-main: #0f172a;
       --text-muted: #64748b;
       --text-dim: #94a3b8;
+      --primary: #1644b8;
+      --primary-hover: #123799;
+      --primary-glow: rgba(22, 68, 184, 0.22);
       --success: #10b981;
+      --success-bg: rgba(16, 185, 129, 0.12);
+      --warning: #d97706;
+      --warning-bg: rgba(245, 158, 11, 0.14);
       --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.12);
+      --radius-sm: 10px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
       --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
-      --shadow-card: 0 12px 32px -4px rgba(15, 23, 42, 0.12), 0 4px 12px -2px rgba(15, 23, 42, 0.06);
-      --space-1: 4px;
-      --space-2: 8px;
-      --space-3: 12px;
-      --space-4: 16px;
+      --shadow-card: 0 2px 12px -2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+      --shadow-drawer: 8px 0 28px rgba(15, 23, 42, 0.16);
+    }
+
+    html.dark {
+      --bg-page: #090d16;
+      --bg-surface: #111827;
+      --bg-card-inner: #0f172a;
+      --bg-drawer: #111827;
+      --border-color: #1e293b;
+      --border-subtle: rgba(255, 255, 255, 0.06);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-glow: rgba(37, 99, 235, 0.25);
+      --shadow-card: 0 4px 18px -2px rgba(0, 0, 0, 0.45);
+      --shadow-drawer: 8px 0 28px rgba(0, 0, 0, 0.55);
     }
 
     *, *::before, *::after {
@@ -41,391 +73,49 @@
       padding: 0;
     }
 
+    [hidden] {
+      display: none !important;
+    }
+
     html, body {
       max-width: 100%;
       overflow-x: hidden;
     }
 
-    img, svg {
+    img, svg, canvas, video {
       max-width: 100%;
     }
 
     body {
-      background-color: var(--bg-page);
+      background: var(--bg-page);
       color: var(--text-main);
       font-family: var(--font-sans);
+      line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body.mode-checkout {
+      background: #c8d0dc;
+      color: #0f172a;
       min-height: 100vh;
       min-height: 100dvh;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
-      -webkit-font-smoothing: antialiased;
-      line-height: 1.4;
     }
 
-    .checkout-wrapper {
-      position: relative;
-      width: 100%;
-      max-width: 388px;
-      margin: 0 auto;
-      padding-right: 5px;
-      padding-bottom: 7px;
-      min-width: 0;
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
     }
 
-    /* Royal blue offset back-layer cleanly contained within wrapper */
-    .checkout-offset-bg {
-      position: absolute;
-      top: 7px;
-      left: 5px;
-      right: 0;
-      bottom: 0;
-      background: #1d4ed8;
-      border-radius: 24px;
-      z-index: 1;
-    }
-
-    /* Main Checkout Card */
-    .checkout-card {
-      position: relative;
-      z-index: 2;
-      width: 100%;
-      min-width: 0;
-      background: var(--bg-card);
-      border: 1.5px solid var(--border-color);
-      border-radius: 22px;
-      padding: 14px;
-      box-shadow: var(--shadow-card);
-      text-align: left;
-    }
-
-    /* Header Brand (strictly MinorUPI, no TM) */
-    .checkout-header {
-      display: flex;
-      align-items: center;
-      justify-content: flex-start;
-      margin-bottom: var(--space-2);
-    }
-    .checkout-brand {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .brand-icon {
-      width: 30px;
-      height: 30px;
-      background: #1d4ed8;
-      border-radius: 7px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #ffffff;
-      font-weight: 800;
-      font-size: 1rem;
-      flex-shrink: 0;
-      box-shadow: 0 3px 8px rgba(29, 78, 216, 0.28);
-    }
-    .brand-title-wrap {
-      display: flex;
-      align-items: baseline;
-      line-height: 1;
-    }
-    .brand-text-minor {
-      font-size: 18px;
-      font-weight: 800;
-      color: #0f172a;
-      letter-spacing: -0.3px;
-    }
-    .brand-text-upi {
-      font-size: 18px;
-      font-weight: 800;
-      color: #1d4ed8;
-      letter-spacing: -0.3px;
-    }
-
-    /* Order Total */
-    .order-total-section {
-      margin-bottom: var(--space-2);
-    }
-    .order-total-label {
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.1em;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      margin-bottom: 1px;
-    }
-    .order-total-amount {
-      display: flex;
-      align-items: baseline;
-      font-size: 26px;
-      font-weight: 800;
-      color: #0f172a;
-      letter-spacing: -0.5px;
-      line-height: 1.15;
-    }
-    .currency-symbol {
-      font-size: 24px;
-      font-weight: 800;
-      margin-right: 4px;
-      color: #0f172a;
-    }
-    .amount-digits {
-      font-family: var(--font-mono);
-      font-variant-numeric: tabular-nums;
-    }
-    .currency-code {
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--text-muted);
-      margin-left: 6px;
-    }
-    .offset-indicator {
-      font-size: 11px;
-      color: var(--text-muted);
-      margin-top: 2px;
-      display: none;
-    }
-
-    /* QR Code Box */
-    .qr-box-wrapper {
-      position: relative;
-      background: #ffffff;
-      border: 1.5px solid var(--border-color);
-      border-radius: 16px;
-      padding: 12px 12px 10px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-    }
-    .qr-image {
-      width: min(60vw, 34dvh);
-      max-width: 210px;
-      height: auto;
-      aspect-ratio: 1 / 1;
-      display: block;
-      border-radius: 6px;
-      transition: filter 0.3s ease;
-    }
-    .qr-caption {
-      margin-top: 8px;
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      text-align: center;
-    }
-
-    /* Side-by-side Action Buttons: Save QR & Pay Now */
-    .checkout-actions {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-      margin-top: 10px;
-      margin-bottom: 12px;
-    }
-    .btn-checkout-secondary {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      min-width: 0;
-      background: #dbe3ec;
-      border: 1px solid var(--border-color);
-      color: #1e293b;
-      font-weight: 700;
-      font-size: 13px;
-      min-height: 40px;
-      padding: 8px 10px;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      text-decoration: none !important;
-      white-space: nowrap;
-    }
-    .btn-checkout-secondary:hover {
-      background: #cbd5e1;
-    }
-    .btn-checkout-primary {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      min-width: 0;
-      background: #1d4ed8;
-      border: 1px solid #1d4ed8;
-      color: #ffffff;
-      font-weight: 700;
-      font-size: 13px;
-      min-height: 40px;
-      padding: 8px 10px;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      box-shadow: 0 3px 10px rgba(29, 78, 216, 0.25);
-      text-decoration: none !important;
-      white-space: nowrap;
-    }
-    .btn-checkout-primary:hover {
-      background: #1e40af;
-    }
-
-    /* Details Meta Rows */
-    .checkout-meta-list {
-      display: flex;
-      flex-direction: column;
-      gap: 7px;
-      min-width: 0;
-      margin-top: 10px;
-    }
-    .checkout-actions + .checkout-meta-list {
-      margin-top: 0;
-    }
-    .meta-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 6px;
-      font-size: 12.5px;
-      min-width: 0;
-    }
-    .meta-label {
-      color: var(--text-muted);
-      font-weight: 500;
-      flex-shrink: 0;
-    }
-    .meta-val {
-      color: #0f172a;
-      font-weight: 700;
-      text-align: right;
-      min-width: 0;
-      overflow-wrap: anywhere;
-      word-break: break-word;
-    }
-    .meta-val.font-mono {
-      font-family: var(--font-mono);
-      font-weight: 600;
-      font-size: 12px;
-    }
-    .expires-val {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      color: #0f172a;
-      font-weight: 600;
-    }
-    .verification-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      background: #dbeafe;
-      color: #1d4ed8;
-      font-weight: 700;
-      font-size: 11.5px;
-      padding: 4px 10px;
-      border-radius: 9999px;
-      max-width: 100%;
-    }
-    .pulse-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: currentColor;
-      animation: pulseDot 1.5s infinite;
-      flex-shrink: 0;
-    }
-    @keyframes pulseDot {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.35; transform: scale(0.75); }
-    }
-
-    /* Animated Status Overlays */
-    .qr-status-overlay {
-      display: none;
-      width: 100%;
-      min-height: 170px;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: #ffffff;
-      border-radius: 14px;
-      padding: 16px 12px;
-      color: #0f172a;
-      text-align: center;
-    }
-    .qr-status-overlay.active {
-      display: flex;
-    }
-    .anim-check-circle {
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
-      background: rgba(16, 185, 129, 0.12);
-      border: 3px solid #10b981;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 10px;
-      animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    }
-    .anim-check-circle svg {
-      width: 34px;
-      height: 34px;
-      stroke: #10b981;
-      stroke-width: 4;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      fill: none;
-      stroke-dasharray: 60;
-      stroke-dashoffset: 60;
-      animation: drawCheck 0.7s 0.2s ease forwards;
-    }
-    @keyframes drawCheck {
-      to { stroke-dashoffset: 0; }
-    }
-    @keyframes popIn {
-      0% { transform: scale(0.5); opacity: 0; }
-      100% { transform: scale(1); opacity: 1; }
-    }
-
-    .anim-hourglass-circle {
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
-      background: #f1f5f9;
-      border: 3px solid #94a3b8;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 10px;
-    }
-    .anim-cross-circle {
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 10px;
-    }
-    .circle-danger {
-      background: rgba(239, 68, 68, 0.1);
-      border: 3px solid #ef4444;
-      color: #ef4444;
-    }
-    .circle-warning {
-      background: rgba(245, 158, 11, 0.1);
-      border: 3px solid #f59e0b;
-      color: #f59e0b;
-    }
-
-    /* Toast notification system */
+    /* ==========================================================================
+       SHARED TOASTS
+       ========================================================================== */
     #toast-container {
       position: fixed;
       top: max(10px, env(safe-area-inset-top));
@@ -447,182 +137,2339 @@
       font-size: 0.84rem;
       font-weight: 600;
       color: #ffffff;
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25);
       overflow-wrap: anywhere;
-      animation: slideInToast 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      animation: toastSlide 0.22s ease forwards;
       transition: opacity 0.2s ease, transform 0.2s ease;
     }
     .toast-success { background: #059669; }
     .toast-error { background: #dc2626; }
-    .toast-info { background: #1d4ed8; }
-    @keyframes slideInToast {
+    .toast-info { background: #1644b8; }
+    @keyframes toastSlide {
       from { transform: translateX(100%); opacity: 0; }
       to { transform: translateX(0); opacity: 1; }
     }
 
-    /* Compact scaling on short phone viewports */
-    @media (max-height: 600px) {
-      .checkout-card { padding: 11px 12px; }
-      .checkout-header { margin-bottom: 6px; }
-      .order-total-section { margin-bottom: 6px; }
-      .order-total-amount { font-size: 22px; }
-      .currency-symbol { font-size: 20px; }
-      .qr-box-wrapper { padding: 8px; }
-      .qr-image { width: min(48vw, 27dvh); }
-      .qr-caption { margin-top: 5px; }
-      .checkout-actions { margin-top: 8px; margin-bottom: 8px; }
-      .btn-checkout-secondary, .btn-checkout-primary { min-height: 36px; padding: 6px 8px; font-size: 12.5px; }
-      .checkout-meta-list { gap: 5px; }
-      .meta-row { font-size: 12px; }
+    /* ==========================================================================
+       SCOPED: #checkout (REBUILT FROM REFERENCE SCREENSHOT, ZERO TM, 360x640 FIT)
+       ========================================================================== */
+    #checkout {
+      width: 100%;
+      max-width: 376px;
+      margin: 0 auto;
+    }
+    #checkout .co-stage {
+      position: relative;
+      width: 100%;
+      padding-right: 7px;
+      padding-bottom: 10px;
+    }
+    #checkout .co-offset-layer {
+      position: absolute;
+      top: 9px;
+      left: 7px;
+      right: 0;
+      bottom: 0;
+      background: #1644b8;
+      border-radius: 24px;
+      z-index: 1;
+    }
+    #checkout .co-card {
+      position: relative;
+      z-index: 2;
+      width: 100%;
+      background: #dde2ea;
+      border: 1px solid #c5cdd9;
+      border-radius: 22px;
+      padding: 13px 14px 14px;
+      box-shadow: 0 14px 30px -6px rgba(15, 23, 42, 0.16);
+      text-align: left;
+      color: #0f172a;
+    }
+
+    /* Top Brand Row */
+    #checkout .co-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    #checkout .co-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #checkout .co-brand-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      background: #1644b8;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 0.95rem;
+      box-shadow: 0 3px 8px rgba(22, 68, 184, 0.28);
+      flex-shrink: 0;
+    }
+    #checkout .co-brand-text {
+      display: inline-flex;
+      align-items: baseline;
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      line-height: 1;
+    }
+    #checkout .co-brand-minor { color: #0f172a; }
+    #checkout .co-brand-upi { color: #1644b8; }
+
+    /* Order Total */
+    #checkout .co-total-block {
+      margin-bottom: 9px;
+    }
+    #checkout .co-total-label {
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      text-transform: uppercase;
+      margin-bottom: 1px;
+    }
+    #checkout .co-total-row {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+      line-height: 1.1;
+    }
+    #checkout .co-currency {
+      font-size: 24px;
+      font-weight: 800;
+      color: #0f172a;
+    }
+    #checkout .co-amount {
+      font-size: 26px;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.6px;
+      font-variant-numeric: tabular-nums;
+    }
+    #checkout .co-inr {
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748b;
+    }
+    #checkout .co-offset-note {
+      margin-top: 3px;
+      display: inline-block;
+      background: #dbeafe;
+      color: #1644b8;
+      border: 1px solid #bfdbfe;
+      border-radius: 6px;
+      padding: 2px 7px;
+      font-size: 10.5px;
+      font-weight: 700;
+    }
+
+    /* Inner bordered panel matching reference screenshot */
+    #checkout .co-inner-panel {
+      background: #e4e7ec;
+      border: 1px solid #4b5563;
+      border-radius: 17px;
+      padding: 12px 12px 11px;
+    }
+
+    #checkout .co-qr-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    #checkout .co-qr-frame {
+      position: relative;
+      background: #eaedf1;
+      border: 1px solid #64748b;
+      border-radius: 13px;
+      padding: 9px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    #checkout .co-qr-img {
+      width: min(56vw, 31dvh);
+      max-width: 190px;
+      height: auto;
+      aspect-ratio: 1 / 1;
+      display: block;
+      border-radius: 4px;
+      background: #ffffff;
+    }
+    #checkout .co-qr-caption {
+      margin-top: 7px;
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    /* Side-by-side Save QR & Pay Now */
+    #checkout .co-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+      margin-top: 9px;
+    }
+    #checkout .co-btn-save {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 36px;
+      padding: 7px 10px;
+      border-radius: 9px;
+      background: #dbe1ea;
+      border: 1px solid #b8c2d1;
+      color: #1644b8;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none !important;
+      white-space: nowrap;
+    }
+    #checkout .co-btn-save:hover {
+      background: #cfd7e3;
+    }
+    #checkout .co-btn-pay {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 36px;
+      padding: 7px 10px;
+      border-radius: 9px;
+      background: #1644b8;
+      border: 1px solid #1644b8;
+      color: #ffffff;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 3px 9px rgba(22, 68, 184, 0.28);
+      text-decoration: none !important;
+      white-space: nowrap;
+    }
+    #checkout .co-btn-pay:hover {
+      background: #123799;
+    }
+
+    /* Details Rows inside Inner Panel */
+    #checkout .co-meta-list {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    #checkout .co-meta-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 2px;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+      font-size: 12px;
+      min-width: 0;
+    }
+    #checkout .co-meta-row:last-child {
+      border-bottom: none;
+      padding-bottom: 1px;
+    }
+    #checkout .co-meta-label {
+      color: #64748b;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    #checkout .co-meta-val {
+      color: #0f172a;
+      font-weight: 700;
+      text-align: right;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    #checkout .co-meta-mono {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      font-size: 11.5px;
+    }
+    #checkout .co-expires-val {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #0f172a;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    #checkout .co-verify-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #cddbf0;
+      border: 1px solid #b3c7e6;
+      color: #1644b8;
+      font-weight: 700;
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 9999px;
+      white-space: nowrap;
+    }
+    #checkout .co-pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: coPulse 1.4s infinite;
+      flex-shrink: 0;
+    }
+    @keyframes coPulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.35; transform: scale(0.7); }
+    }
+
+    /* Animated Terminal Overlays */
+    #checkout .co-state-box {
+      width: 100%;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 13px;
+      padding: 18px 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    #checkout .co-blur-backdrop {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(90deg, rgba(15, 23, 42, 0.08) 25%, transparent 25%),
+        linear-gradient(rgba(15, 23, 42, 0.08) 25%, transparent 25%);
+      background-size: 16px 16px;
+      filter: blur(4px);
+      opacity: 0.45;
+      pointer-events: none;
+    }
+    #checkout .co-state-content {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #checkout .co-sparkle-wrap {
+      position: relative;
+      width: 72px;
+      height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+    }
+    #checkout .co-sparkle {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      fill: #10b981;
+      animation: coSparkle 1.4s ease-out infinite alternate;
+    }
+    #checkout .co-sparkle.s1 { top: 0; right: 2px; animation-delay: 0s; }
+    #checkout .co-sparkle.s2 { bottom: 4px; left: 0; width: 9px; height: 9px; animation-delay: 0.35s; }
+    #checkout .co-sparkle.s3 { top: 8px; left: 2px; width: 8px; height: 8px; fill: #34d399; animation-delay: 0.7s; }
+    @keyframes coSparkle {
+      0% { transform: scale(0.6) rotate(0deg); opacity: 0.4; }
+      100% { transform: scale(1.15) rotate(20deg); opacity: 1; }
+    }
+    #checkout .co-circle-paid {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: rgba(16, 185, 129, 0.14);
+      border: 3px solid #10b981;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: coPop 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    #checkout .co-circle-paid svg {
+      width: 30px;
+      height: 30px;
+      stroke: #10b981;
+      stroke-width: 3.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+      stroke-dasharray: 56;
+      stroke-dashoffset: 56;
+      animation: coDrawTick 0.6s 0.15s ease forwards;
+    }
+    @keyframes coDrawTick { to { stroke-dashoffset: 0; } }
+    @keyframes coPop { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+    #checkout .co-circle-expired {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: #f1f5f9;
+      border: 3px solid #94a3b8;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+      animation: coGentleShake 1.8s ease-in-out infinite;
+    }
+    @keyframes coGentleShake {
+      0%, 100% { transform: rotate(0deg); }
+      20% { transform: rotate(-6deg); }
+      40% { transform: rotate(6deg); }
+      60% { transform: rotate(-3deg); }
+      80% { transform: rotate(0deg); }
+    }
+
+    #checkout .co-circle-cancelled {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: rgba(245, 158, 11, 0.12);
+      border: 3px solid #d97706;
+      color: #d97706;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+      animation: coPop 0.4s ease;
+    }
+    #checkout .co-circle-failed {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: rgba(239, 68, 68, 0.12);
+      border: 3px solid #ef4444;
+      color: #ef4444;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+      animation: coFailShake 0.48s ease;
+    }
+    @keyframes coFailShake {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-6px); }
+      40% { transform: translateX(6px); }
+      60% { transform: translateX(-4px); }
+      80% { transform: translateX(4px); }
+    }
+    #checkout .co-utr-chip {
+      margin-top: 8px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.32);
+      color: #065f46;
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    @media (max-height: 620px) {
+      #checkout .co-card { padding: 10px 12px 11px; }
+      #checkout .co-header { margin-bottom: 6px; }
+      #checkout .co-total-block { margin-bottom: 7px; }
+      #checkout .co-amount { font-size: 22px; }
+      #checkout .co-currency { font-size: 20px; }
+      #checkout .co-inner-panel { padding: 9px 10px; }
+      #checkout .co-qr-frame { padding: 7px; }
+      #checkout .co-qr-img { width: min(46vw, 25dvh); }
+      #checkout .co-qr-caption { margin-top: 5px; }
+      #checkout .co-actions { margin-top: 7px; gap: 7px; }
+      #checkout .co-btn-save, #checkout .co-btn-pay { min-height: 33px; font-size: 12px; }
+      #checkout .co-meta-list { margin-top: 7px; }
+      #checkout .co-meta-row { padding: 4px 2px; font-size: 11.5px; }
+    }
+
+    /* ==========================================================================
+       SCOPED: #auth (SETUP & LOGIN — COMPACT, TOP-ALIGNED, ZERO DEAD SPACE)
+       ========================================================================== */
+    #auth {
+      width: 100%;
+      padding: max(var(--s-4), env(safe-area-inset-top)) var(--s-4) var(--s-6);
+    }
+    #auth .auth-card {
+      width: 100%;
+      max-width: 410px;
+      margin: var(--s-3) auto 0;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: var(--s-4);
+      box-shadow: var(--shadow-card);
+      text-align: center;
+    }
+    @media (min-width: 640px) {
+      #auth .auth-card {
+        margin-top: 32px;
+        padding: var(--s-6);
+      }
+    }
+    #auth .auth-brand-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: var(--s-2);
+    }
+    #auth .auth-logo {
+      width: 36px;
+      height: 36px;
+      background: var(--primary);
+      border-radius: 9px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 1.15rem;
+      box-shadow: 0 4px 12px var(--primary-glow);
+    }
+    #auth .auth-brand-name {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.3px;
+    }
+    #auth .auth-brand-name span { color: var(--primary); }
+    #auth .auth-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--text-main);
+      margin-bottom: var(--s-1);
+    }
+    #auth .auth-subtitle {
+      font-size: 0.84rem;
+      color: var(--text-muted);
+      margin-bottom: var(--s-3);
+      line-height: 1.4;
+    }
+    #auth .alert-box {
+      padding: var(--s-2) var(--s-3);
+      border-radius: var(--radius-sm);
+      font-size: 0.82rem;
+      margin-bottom: var(--s-3);
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+      text-align: left;
+      overflow-wrap: anywhere;
+    }
+    html.dark #auth .alert-box {
+      background: rgba(239, 68, 68, 0.14);
+      border-color: rgba(239, 68, 68, 0.35);
+      color: #fca5a5;
+    }
+
+    /* ==========================================================================
+       SHARED FORMS, BUTTONS, CARDS, TABLES (USED BY #auth & #app)
+       ========================================================================== */
+    .form-group {
+      margin-bottom: var(--s-3);
+      text-align: left;
+      min-width: 0;
+    }
+    .form-group label {
+      display: block;
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: var(--s-1);
+      text-transform: uppercase;
+      letter-spacing: 0.45px;
+    }
+    .form-control {
+      width: 100%;
+      min-width: 0;
+      min-height: 40px;
+      padding: 8px 12px;
+      background: var(--bg-card-inner);
+      border: 1.5px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-main);
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .form-control:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-glow);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      min-height: 38px;
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-decoration: none !important;
+      font-family: inherit;
+      max-width: 100%;
+    }
+    .btn-block { width: 100%; }
+    .btn-primary {
+      background: var(--primary);
+      color: #ffffff;
+      box-shadow: 0 3px 10px var(--primary-glow);
+    }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary {
+      background: var(--bg-card-inner);
+      color: var(--text-main);
+      border-color: var(--border-color);
+    }
+    .btn-secondary:hover { background: var(--border-color); }
+    .btn-danger {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+    .btn-danger:hover { background: rgba(239, 68, 68, 0.2); }
+    .btn-sm {
+      min-height: 32px;
+      padding: 5px 10px;
+      font-size: 0.78rem;
+    }
+    .btn.is-disabled {
+      opacity: 0.5;
+      filter: grayscale(70%);
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* ==========================================================================
+       SCOPED: #app (DASHBOARD, DRAWER, SUB-VIEWS — STRICT COMPACT FLOW)
+       ========================================================================== */
+    #app {
+      width: 100%;
+    }
+
+    #app .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.58);
+      backdrop-filter: blur(3px);
+      z-index: 90;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    #app .drawer-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    #app .nav-drawer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      height: 100vh;
+      height: 100dvh;
+      width: min(270px, 82vw);
+      background: var(--bg-drawer);
+      border-right: 1px solid var(--border-color);
+      box-shadow: var(--shadow-drawer);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      transform: translateX(-100%);
+      transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      user-select: none;
+    }
+    #app .nav-drawer.open { transform: translateX(0); }
+
+    #app .drawer-header {
+      padding: var(--s-4);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--s-2);
+      border-bottom: 1px solid var(--border-color);
+    }
+    #app .drawer-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #app .brand-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--primary);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+    #app .brand-name {
+      font-size: 17px;
+      font-weight: 800;
+      color: var(--text-main);
+      line-height: 1;
+    }
+    #app .brand-name span { color: var(--primary); }
+    #app .brand-subtitle {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    #app .drawer-close-btn {
+      width: 32px;
+      height: 32px;
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #app .drawer-close-btn:hover {
+      background: var(--border-subtle);
+      color: var(--text-main);
+    }
+
+    #app .drawer-nav {
+      padding: var(--s-3) var(--s-2);
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: var(--s-1);
+    }
+    #app .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 9px 12px;
+      color: var(--text-muted);
+      border-radius: var(--radius-sm);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none !important;
+    }
+    #app .nav-link svg {
+      width: 18px;
+      height: 18px;
+      stroke-width: 2.2;
+      flex-shrink: 0;
+    }
+    #app .nav-link:hover {
+      color: var(--text-main);
+      background: var(--bg-card-inner);
+    }
+    #app .nav-link.active {
+      color: #ffffff;
+      background: var(--primary);
+      box-shadow: 0 3px 10px var(--primary-glow);
+    }
+    #app .nav-link.active svg { color: #ffffff; }
+
+    #app .drawer-footer {
+      padding: var(--s-3) var(--s-4);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: var(--s-3);
+    }
+    #app .user-profile-badge {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    #app .user-avatar {
+      width: 32px;
+      height: 32px;
+      flex-shrink: 0;
+      background: #e2e8f0;
+      color: #1e293b;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.84rem;
+    }
+    html.dark #app .user-avatar { background: #1e293b; color: #f8fafc; }
+    #app .user-info-text { flex: 1; min-width: 0; overflow: hidden; }
+    #app .user-name {
+      font-size: 0.84rem;
+      font-weight: 700;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #app .user-email {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Topbar */
+    #app .topbar {
+      min-height: calc(54px + env(safe-area-inset-top));
+      border-bottom: 1px solid var(--border-color);
+      background: var(--bg-surface);
+      padding: env(safe-area-inset-top) max(var(--s-3), env(safe-area-inset-right)) 0 max(var(--s-3), env(safe-area-inset-left));
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--s-2);
+      position: sticky;
+      top: 0;
+      z-index: 40;
+    }
+    #app .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: var(--s-2);
+      min-width: 0;
+    }
+    #app .hamburger-btn {
+      width: 36px;
+      height: 36px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 4.5px;
+      background: transparent;
+      border: 1px solid var(--border-color);
+      border-radius: 9px;
+      cursor: pointer;
+    }
+    #app .hamburger-bar {
+      width: 16px;
+      height: 2px;
+      background: var(--text-main);
+      border-radius: 2px;
+    }
+    #app .topbar-title-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      overflow: hidden;
+    }
+    #app .topbar-brand {
+      font-size: 0.98rem;
+      font-weight: 800;
+      color: var(--text-main);
+      flex-shrink: 0;
+    }
+    #app .topbar-brand span { color: var(--primary); }
+    #app .topbar-divider { color: var(--border-color); flex-shrink: 0; }
+    #app .topbar-page-name {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #app .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: var(--s-2);
+      flex-shrink: 0;
+    }
+
+    #app .connection-status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 9999px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #app .status-connected {
+      background: var(--success-bg);
+      color: var(--success);
+      border-color: rgba(16, 185, 129, 0.25);
+    }
+    #app .status-warning {
+      background: var(--warning-bg);
+      color: var(--warning);
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+    #app .status-disconnected {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border-color: rgba(239, 68, 68, 0.25);
+    }
+    #app .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+    #app .status-connected .status-dot {
+      animation: dotPulse 2s infinite;
+    }
+    @keyframes dotPulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(0.7); opacity: 0.45; }
+    }
+    #app .theme-toggle-btn {
+      width: 34px;
+      height: 34px;
+      flex-shrink: 0;
+      border-radius: 9px;
+      border: 1px solid var(--border-color);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Main Viewport & Views */
+    #app .main-viewport {
+      display: block;
+      padding: var(--s-4);
+      max-width: 1280px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    @media (min-width: 768px) {
+      #app .main-viewport {
+        padding: var(--s-4) var(--s-6) var(--s-6);
+      }
+    }
+
+    #app .setup-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: var(--s-2) var(--s-3);
+      background: var(--warning-bg);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: var(--radius-md);
+      padding: var(--s-3);
+      margin-bottom: var(--s-4);
+    }
+    #app .setup-banner-text {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--s-2);
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    #app .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: var(--s-3);
+      margin-bottom: var(--s-3);
+    }
+    #app .page-header-copy {
+      min-width: 0;
+    }
+    #app .page-header h1 {
+      font-size: clamp(1.2rem, 3.2vw, 1.5rem);
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.3px;
+      line-height: 1.25;
+    }
+    #app .page-header p {
+      color: var(--text-muted);
+      font-size: 0.84rem;
+      margin-top: 2px;
+    }
+    #app .page-header-actions {
+      display: flex;
+      gap: var(--s-2);
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    #app .action-subtext {
+      font-size: 0.78rem;
+      color: var(--warning);
+      font-weight: 600;
+      margin-top: var(--s-1);
+    }
+
+    #app .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: var(--s-4);
+      box-shadow: var(--shadow-card);
+      margin-bottom: var(--s-4);
+      min-width: 0;
+    }
+    #app .card:last-child { margin-bottom: 0; }
+    #app .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: var(--s-2);
+      margin-bottom: var(--s-3);
+    }
+    #app .card-title {
+      font-size: 0.98rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    /* 2-Column Stat Cards on Phones, 4 Columns on Desktop */
+    #app .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--s-3);
+      margin-bottom: var(--s-4);
+    }
+    @media (min-width: 900px) {
+      #app .stats-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+    #app .stat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: var(--s-3) var(--s-4);
+      box-shadow: var(--shadow-card);
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    #app .stat-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      margin-bottom: var(--s-1);
+    }
+    #app .stat-value {
+      font-size: clamp(1.15rem, 3.2vw, 1.65rem);
+      font-weight: 800;
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+    #app .stat-subtext {
+      font-size: 0.74rem;
+      color: var(--text-muted);
+      margin-top: var(--s-1);
+    }
+
+    #app .inline-input-row {
+      display: flex;
+      gap: var(--s-2);
+      flex-wrap: wrap;
+      max-width: 540px;
+    }
+    #app .inline-input-row .form-control {
+      flex: 1 1 200px;
+    }
+
+    /* Subtabs & Badges */
+    #app .subtab-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--s-2);
+      margin-bottom: var(--s-3);
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: var(--s-2);
+    }
+    #app .subtab-btn {
+      padding: 6px 12px;
+      min-height: 34px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-card-inner);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    #app .subtab-btn.active {
+      background: var(--primary);
+      color: #ffffff;
+      border-color: var(--primary);
+    }
+
+    #app .table-container {
+      width: 100%;
+      overflow-x: auto;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+      background: var(--bg-surface);
+    }
+    #app .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.84rem;
+      text-align: left;
+    }
+    #app .data-table th {
+      background: var(--bg-card-inner);
+      padding: 9px 12px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-color);
+      white-space: nowrap;
+    }
+    #app .data-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-main);
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      vertical-align: middle;
+    }
+    #app .data-table tr:last-child td { border-bottom: none; }
+    #app .table-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    #app .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    #app .badge-paid, #app .badge-matched { background: var(--success-bg); color: var(--success); }
+    #app .badge-pending { background: rgba(22, 68, 184, 0.12); color: var(--primary); }
+    #app .badge-expired, #app .badge-ignored { background: rgba(148, 163, 184, 0.16); color: var(--text-muted); }
+    #app .badge-cancelled, #app .badge-unmatched { background: var(--warning-bg); color: var(--warning); }
+    #app .badge-failed, #app .badge-rejected { background: var(--danger-bg); color: var(--danger); }
+
+    #app .empty-state-box {
+      padding: var(--s-4);
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    #app .empty-state-icon { width: 38px; height: 38px; margin-bottom: var(--s-2); color: var(--text-dim); }
+    #app .empty-state-title { font-size: 0.94rem; font-weight: 700; color: var(--text-main); margin-bottom: var(--s-1); }
+    #app .empty-state-text { font-size: 0.82rem; color: var(--text-muted); max-width: 400px; margin-bottom: var(--s-3); }
+
+    /* Docs Accordion & Code Scroll Boxes */
+    #app .docs-controls-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--s-2);
+      align-items: center;
+      margin-bottom: var(--s-3);
+    }
+    #app .docs-controls-bar select {
+      flex: 1 1 200px;
+      min-height: 36px;
+      padding: 5px 10px;
+      font-size: 0.85rem;
+    }
+    #app .docs-accordion-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--s-3);
+    }
+    #app .doc-section {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-card);
+      overflow: hidden;
+    }
+    #app .doc-section summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 12px var(--s-4);
+      font-size: 0.94rem;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--s-2);
+    }
+    #app .doc-section summary::-webkit-details-marker { display: none; }
+    #app .doc-section[open] summary {
+      border-bottom: 1px solid var(--border-color);
+      background: var(--bg-card-inner);
+    }
+    #app .doc-chevron { font-size: 0.78rem; color: var(--text-muted); transition: transform 0.16s; }
+    #app .doc-section[open] .doc-chevron { transform: rotate(180deg); }
+    #app .doc-body {
+      padding: var(--s-4);
+      font-size: 0.86rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    #app .doc-body p { margin-bottom: var(--s-3); }
+    #app .doc-body p:last-child { margin-bottom: 0; }
+    #app .doc-body h4 { font-size: 0.88rem; font-weight: 700; color: var(--text-main); margin: var(--s-3) 0 var(--s-2); }
+    #app .doc-body ul { padding-left: 18px; margin-bottom: var(--s-3); }
+    #app .doc-body li { margin-bottom: 4px; }
+    #app .code-box {
+      position: relative;
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: var(--radius-sm);
+      padding: 11px 12px;
+      margin-bottom: var(--s-3);
+      overflow: hidden;
+    }
+    #app .code-box:last-child { margin-bottom: 0; }
+    #app .code-box pre {
+      margin: 0;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: #f8fafc;
+      overflow-x: auto;
+      padding-right: 52px;
+      line-height: 1.45;
+    }
+    #app .copy-btn-code {
+      position: absolute;
+      top: 7px;
+      right: 7px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* Modals */
+    #app .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: var(--s-3);
+    }
+    #app .modal-backdrop.active { display: flex; }
+    #app .modal-box {
+      width: min(100% - 16px, 440px);
+      max-height: calc(100dvh - 24px);
+      overflow-y: auto;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: var(--s-4);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+    }
+    #app .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--s-2);
+      margin-bottom: var(--s-3);
+    }
+    #app .modal-title { font-size: 1.05rem; font-weight: 800; color: var(--text-main); }
+    #app .modal-footer {
+      padding-top: var(--s-3);
+      margin-top: var(--s-3);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: var(--s-2);
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    @media (max-width: 639px) {
+      #app .page-header { flex-direction: column; align-items: stretch; }
+      #app .page-header-copy { width: 100%; }
+      #app .page-header-actions { width: 100%; }
+      #app .page-header-actions > .btn, #app .page-header-actions > select { flex: 1 1 auto; }
+      #app .setup-banner .btn { width: 100%; }
+
+      #app .table-container { overflow-x: visible; border: none; background: transparent; }
+      #app .data-table, #app .data-table tbody, #app .data-table tr, #app .data-table td { display: block; width: 100%; }
+      #app .data-table thead { display: none; }
+      #app .data-table tr {
+        background: var(--bg-card-inner);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-sm);
+        padding: 7px 12px;
+        margin-bottom: var(--s-3);
+      }
+      #app .data-table tr:last-child { margin-bottom: 0; }
+      #app .data-table td {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--s-3);
+        padding: 5px 0;
+        border-bottom: 1px dashed var(--border-color);
+        text-align: right;
+      }
+      #app .data-table td:last-child { border-bottom: none; }
+      #app .data-table td::before {
+        content: attr(data-label);
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        text-align: left;
+        flex-shrink: 0;
+      }
+      #app .table-actions { justify-content: flex-end; }
+    }
+    @media (max-width: 520px) {
+      #app .topbar-brand, #app .topbar-divider { display: none; }
+    }
+    @media (max-width: 479px) {
+      #app .hide-xs { display: none; }
+      #app .modal-footer { flex-direction: column-reverse; }
+      #app .modal-footer .btn { width: 100%; }
+    }
+    @media (max-width: 419px) {
+      #app #topbar-conn-text { display: none; }
+      #app .connection-status-pill { padding: 7px; }
+    }
+
+    /* COMPACT FLOW SAFETY NET */
+    #app main { display: block; }
+    #app .view, #app .page, #app .card, #app section, #app .page-header, #app .page-header-copy {
+      min-height: 0;
+      height: auto;
     }
   </style>
 </head>
 <body>
   <div id="toast-container"></div>
 
-  <div class="checkout-wrapper">
-    <div class="checkout-offset-bg"></div>
-
-    <div class="checkout-card">
-      <!-- Brand Header (No TM) -->
-      <div class="checkout-header">
-        <div class="checkout-brand">
-          <div class="brand-icon">M</div>
-          <div class="brand-title-wrap">
-            <span class="brand-text-minor">Minor</span>
-            <span class="brand-text-upi">UPI</span>
+  <!-- ========================================================================
+       SCREEN 1: PUBLIC CHECKOUT (/pay/<order_id>) — EXACT REFERENCE DESIGN
+       ======================================================================== -->
+  <section id="checkout" hidden>
+    <div class="co-stage">
+      <div class="co-offset-layer"></div>
+      <div class="co-card">
+        <div class="co-header">
+          <div class="co-brand">
+            <div class="co-brand-icon">M</div>
+            <div class="co-brand-text">
+              <span class="co-brand-minor">Minor</span><span class="co-brand-upi">UPI</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Order Total Section -->
-      <div class="order-total-section">
-        <div class="order-total-label">ORDER TOTAL</div>
-        <div class="order-total-amount">
-          <span class="currency-symbol">₹</span>
-          <span id="co-amount" class="amount-digits">0.00</span>
-          <span class="currency-code">INR</span>
-        </div>
-        <div id="co-offset-note" class="offset-indicator">
-          Includes dynamic paise verification offset
-        </div>
-      </div>
-
-      <!-- QR Code & Status Display Box -->
-      <div class="qr-box-wrapper">
-        <img id="co-qr-img" class="qr-image" src="" alt="UPI Payment QR Code">
-        <div id="co-qr-caption" class="qr-caption">SCAN WITH ANY UPI APP</div>
-
-        <!-- Paid Overlay -->
-        <div id="co-overlay-paid" class="qr-status-overlay">
-          <div class="anim-check-circle">
-            <svg viewBox="0 0 24 24">
-              <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
+        <div class="co-total-block">
+          <div class="co-total-label">ORDER TOTAL</div>
+          <div class="co-total-row">
+            <span class="co-currency">₹</span>
+            <span id="co-amount" class="co-amount">0.00</span>
+            <span class="co-inr">INR</span>
           </div>
-          <h3 style="font-size: 1.2rem; font-weight: 800; color: #10b981; margin-bottom: 4px;">Payment Successful</h3>
-          <p style="font-size: 0.84rem; color: #64748b; margin-bottom: 10px;">Amount ₹<span id="co-paid-amount">0.00</span> verified</p>
-          <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 5px 12px; font-family: var(--font-mono); font-size: 0.78rem; color: #065f46; font-weight: 700; overflow-wrap: anywhere;">
-            UTR: <span id="co-paid-utr"></span>
+          <div id="co-offset-note" class="co-offset-note" hidden>
+            Pay exactly ₹<span id="co-offset-exact">0.00</span>
           </div>
-          <p id="co-redirect-countdown" style="font-size: 0.74rem; color: #94a3b8; margin-top: 10px; display: none;">Redirecting in 3 seconds...</p>
         </div>
 
-        <!-- Expired Overlay -->
-        <div id="co-overlay-expired" class="qr-status-overlay">
-          <div class="anim-hourglass-circle">
-            <span style="font-size: 1.8rem;">⌛</span>
+        <div class="co-inner-panel">
+          <div class="co-qr-stage">
+            <div id="co-qr-frame" class="co-qr-frame">
+              <img id="co-qr-img" class="co-qr-img" src="" alt="UPI Payment QR">
+            </div>
+            <div id="co-qr-caption" class="co-qr-caption">SCAN WITH ANY UPI APP</div>
+
+            <!-- Paid Animation -->
+            <div id="co-state-paid" class="co-state-box" hidden>
+              <div class="co-state-content">
+                <div class="co-sparkle-wrap">
+                  <svg class="co-sparkle s1" viewBox="0 0 24 24"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5Z"/></svg>
+                  <svg class="co-sparkle s2" viewBox="0 0 24 24"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5Z"/></svg>
+                  <svg class="co-sparkle s3" viewBox="0 0 24 24"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5Z"/></svg>
+                  <div class="co-circle-paid">
+                    <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  </div>
+                </div>
+                <div style="font-size: 16px; font-weight: 800; color: #059669; margin-bottom: 2px;">Payment Successful</div>
+                <div style="font-size: 12px; color: #64748b;">Amount verified</div>
+                <div class="co-utr-chip">UTR: <span id="co-paid-utr"></span></div>
+                <div id="co-redirect-countdown" style="font-size: 11px; color: #94a3b8; margin-top: 8px;" hidden>Redirecting in 3 seconds...</div>
+              </div>
+            </div>
+
+            <!-- Expired Animation -->
+            <div id="co-state-expired" class="co-state-box" hidden>
+              <div class="co-blur-backdrop"></div>
+              <div class="co-state-content">
+                <div class="co-circle-expired">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 22h14"/><path d="M5 2h14"/>
+                    <path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/>
+                    <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>
+                  </svg>
+                </div>
+                <div style="font-size: 15px; font-weight: 800; color: #475569; margin-bottom: 3px;">Payment Expired</div>
+                <div style="font-size: 12px; color: #64748b;">This link has expired. Please request a new payment link.</div>
+              </div>
+            </div>
+
+            <!-- Cancelled Animation -->
+            <div id="co-state-cancelled" class="co-state-box" hidden>
+              <div class="co-state-content">
+                <div class="co-circle-cancelled">
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </div>
+                <div style="font-size: 15px; font-weight: 800; color: #b45309; margin-bottom: 3px;">Payment Cancelled</div>
+                <div style="font-size: 12px; color: #64748b;">This payment request was cancelled.</div>
+              </div>
+            </div>
+
+            <!-- Failed Animation -->
+            <div id="co-state-failed" class="co-state-box" hidden>
+              <div class="co-state-content">
+                <div class="co-circle-failed">
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </div>
+                <div style="font-size: 15px; font-weight: 800; color: #dc2626; margin-bottom: 3px;">Payment Failed</div>
+                <div id="co-fail-reason" style="font-size: 12px; color: #ef4444;">Verification could not be completed.</div>
+              </div>
+            </div>
+
+            <!-- Unavailable Animation -->
+            <div id="co-state-unavailable" class="co-state-box" hidden>
+              <div class="co-state-content">
+                <div class="co-circle-cancelled">
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                </div>
+                <div style="font-size: 15px; font-weight: 800; color: #b45309; margin-bottom: 3px;">Gateway Unavailable</div>
+                <div id="co-unavailable-reason" style="font-size: 12px; color: #64748b;">Merchant is not configured / temporarily unavailable.</div>
+              </div>
+            </div>
           </div>
-          <h3 style="font-size: 1.2rem; font-weight: 800; color: #64748b; margin-bottom: 4px;">Payment Expired</h3>
-          <p style="font-size: 0.82rem; color: #94a3b8;">The payment window has closed. Please request a new payment link.</p>
-        </div>
 
-        <!-- Cancelled Overlay -->
-        <div id="co-overlay-cancelled" class="qr-status-overlay">
-          <div class="anim-cross-circle circle-warning">
-            <span style="font-size: 1.8rem;">✕</span>
+          <div id="co-actions-row" class="co-actions">
+            <a id="co-btn-save-qr" href="#" download="MinorUPI-QR.png" class="co-btn-save">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              Save QR
+            </a>
+            <a id="co-btn-pay-now" href="#" class="co-btn-pay">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                <line x1="12" y1="18" x2="12.01" y2="18"></line>
+              </svg>
+              Pay Now
+            </a>
           </div>
-          <h3 style="font-size: 1.2rem; font-weight: 800; color: #d97706; margin-bottom: 4px;">Payment Cancelled</h3>
-          <p style="font-size: 0.82rem; color: #94a3b8;">This payment request was cancelled by the merchant.</p>
-        </div>
 
-        <!-- Failed Overlay -->
-        <div id="co-overlay-failed" class="qr-status-overlay">
-          <div class="anim-cross-circle circle-danger">
-            <span style="font-size: 1.8rem;">⚠</span>
+          <div class="co-meta-list">
+            <div class="co-meta-row">
+              <span class="co-meta-label">Merchant</span>
+              <span id="co-merchant-name" class="co-meta-val">Loading...</span>
+            </div>
+            <div class="co-meta-row">
+              <span class="co-meta-label">Order ID</span>
+              <span id="co-order-id" class="co-meta-val co-meta-mono">...</span>
+            </div>
+            <div id="co-expiry-row" class="co-meta-row">
+              <span class="co-meta-label">Expires In</span>
+              <span class="co-meta-val co-expires-val">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                <span>Expires in <span id="co-timer" style="font-family: var(--font-mono);">--:--</span></span>
+              </span>
+            </div>
+            <div class="co-meta-row">
+              <span class="co-meta-label">Verification</span>
+              <span id="co-verification-pill" class="co-verify-pill">
+                <span id="co-pulse-dot" class="co-pulse-dot"></span>
+                <span id="co-verification-text">Waiting for payment...</span>
+              </span>
+            </div>
           </div>
-          <h3 style="font-size: 1.2rem; font-weight: 800; color: #dc2626; margin-bottom: 4px;">Payment Failed</h3>
-          <p id="co-fail-reason" style="font-size: 0.82rem; color: #ef4444;">Verification could not be completed.</p>
-        </div>
-
-        <!-- Unavailable Overlay -->
-        <div id="co-overlay-unavailable" class="qr-status-overlay">
-          <div class="anim-cross-circle circle-warning">
-            <span style="font-size: 1.8rem;">⚠</span>
-          </div>
-          <h3 style="font-size: 1.1rem; font-weight: 800; color: #d97706; margin-bottom: 4px;">Gateway Unavailable</h3>
-          <p id="co-unavailable-reason" style="font-size: 0.82rem; color: #64748b;">Merchant is not configured / temporarily unavailable.</p>
-        </div>
-      </div>
-
-      <!-- Side-by-Side Action Buttons: Hidden when paid / expired / cancelled / failed -->
-      <div id="co-actions-row" class="checkout-actions">
-        <a id="co-btn-save-qr" href="#" download="MinorUPI-QR.png" class="btn-checkout-secondary">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          Save QR
-        </a>
-        <a id="co-btn-pay-now" href="#" class="btn-checkout-primary">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
-            <line x1="12" y1="18" x2="12.01" y2="18"></line>
-          </svg>
-          Pay Now
-        </a>
-      </div>
-
-      <!-- Meta Info Rows -->
-      <div class="checkout-meta-list">
-        <div class="meta-row">
-          <span class="meta-label">Merchant</span>
-          <span id="co-merchant-name" class="meta-val">Loading...</span>
-        </div>
-        <div class="meta-row">
-          <span class="meta-label">Order ID</span>
-          <span id="co-order-id" class="meta-val font-mono">...</span>
-        </div>
-        <div id="co-expiry-row" class="meta-row">
-          <span class="meta-label">Expires In</span>
-          <span class="meta-val expires-val">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"></circle>
-              <polyline points="12 6 12 12 16 14"></polyline>
-            </svg>
-            <span id="co-timer" style="font-family: var(--font-mono); font-variant-numeric: tabular-nums;">--:--</span>
-          </span>
-        </div>
-        <div class="meta-row">
-          <span class="meta-label">Verification</span>
-          <span id="co-verification-pill" class="verification-pill">
-            <span id="co-pulse-dot" class="pulse-dot"></span>
-            <span id="co-verification-text">Waiting for payment...</span>
-          </span>
         </div>
       </div>
     </div>
-  </div>
+  </section>
+
+  <!-- ========================================================================
+       SCREEN 2: AUTHENTICATION (SETUP OR LOGIN)
+       ======================================================================== -->
+  <section id="auth" hidden>
+    <div id="screen-setup" class="auth-card" hidden>
+      <div class="auth-brand-row">
+        <div class="auth-logo">M</div>
+        <div class="auth-brand-name">Minor<span>UPI</span></div>
+      </div>
+      <h1 class="auth-title">First-Time Setup</h1>
+      <p class="auth-subtitle">Create your private MinorUPI administrator account. Setup locks permanently once complete.</p>
+      <div id="setup-alert" class="alert-box" hidden></div>
+      <form id="setup-form" autocomplete="on">
+        <div class="form-group">
+          <label for="setup-name">Your Full Name</label>
+          <input type="text" id="setup-name" class="form-control" placeholder="Your Full Name" autocomplete="name" required>
+        </div>
+        <div class="form-group">
+          <label for="setup-email">Admin Email</label>
+          <input type="email" id="setup-email" class="form-control" placeholder="you@example.com" autocomplete="email" required>
+        </div>
+        <div class="form-group">
+          <label for="setup-password">Admin Password</label>
+          <input type="password" id="setup-password" class="form-control" placeholder="Minimum 6 characters" autocomplete="new-password" required minlength="6">
+        </div>
+        <div class="form-group">
+          <label for="setup-confirm">Confirm Password</label>
+          <input type="password" id="setup-confirm" class="form-control" placeholder="Re-enter password" autocomplete="new-password" required minlength="6">
+        </div>
+        <button type="submit" id="btn-submit-setup" class="btn btn-primary btn-block">Create Admin Account &amp; Launch</button>
+      </form>
+    </div>
+
+    <div id="screen-login" class="auth-card" hidden>
+      <div class="auth-brand-row">
+        <div class="auth-logo">M</div>
+        <div class="auth-brand-name">Minor<span>UPI</span></div>
+      </div>
+      <h1 class="auth-title">Admin Sign In</h1>
+      <p class="auth-subtitle">Sign in to manage your MinorUPI gateway.</p>
+      <div id="login-alert" class="alert-box" hidden></div>
+      <form id="login-form" autocomplete="on">
+        <div class="form-group">
+          <label for="login-email">Admin Email</label>
+          <input type="email" id="login-email" class="form-control" placeholder="you@example.com" autocomplete="email" required>
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" class="form-control" placeholder="Your password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" id="btn-submit-login" class="btn btn-primary btn-block">Sign In to Dashboard</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ========================================================================
+       SCREEN 3: LOGGED-IN GATEWAY APPLICATION
+       ======================================================================== -->
+  <section id="app" hidden>
+    <div id="drawer-overlay" class="drawer-overlay" onclick="toggleDrawer(false)"></div>
+
+    <aside id="nav-drawer" class="nav-drawer">
+      <div class="drawer-header">
+        <div class="drawer-brand">
+          <div class="brand-icon">M</div>
+          <div>
+            <div class="brand-name">Minor<span>UPI</span></div>
+            <div class="brand-subtitle">Private Gateway</div>
+          </div>
+        </div>
+        <button class="drawer-close-btn" onclick="toggleDrawer(false)" aria-label="Close Navigation">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+
+      <nav class="drawer-nav">
+        <a class="nav-link active" data-tab="dashboard" onclick="switchTab('dashboard')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <span>Dashboard</span>
+        </a>
+        <a class="nav-link" data-tab="connect" onclick="switchTab('connect')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          <span>Connect</span>
+        </a>
+        <a class="nav-link" data-tab="links" onclick="switchTab('links')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+          <span>Payment Links</span>
+        </a>
+        <a class="nav-link" data-tab="transactions" onclick="switchTab('transactions')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          <span>Transactions</span>
+        </a>
+        <a class="nav-link" data-tab="api" onclick="switchTab('api')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <span>API</span>
+        </a>
+        <a class="nav-link" data-tab="docs" onclick="switchTab('docs')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          <span>Docs</span>
+        </a>
+        <a class="nav-link" data-tab="settings" onclick="switchTab('settings')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Settings</span>
+        </a>
+      </nav>
+
+      <div class="drawer-footer">
+        <div class="user-profile-badge">
+          <div id="drawer-user-avatar" class="user-avatar">A</div>
+          <div class="user-info-text">
+            <div id="drawer-user-name" class="user-name">Administrator</div>
+            <div id="drawer-user-email" class="user-email">admin</div>
+          </div>
+        </div>
+        <button class="btn btn-danger btn-sm btn-block" onclick="confirmLogout()">Logout</button>
+      </div>
+    </aside>
+
+    <header class="topbar">
+      <div class="topbar-left">
+        <button id="btn-hamburger" class="hamburger-btn" onclick="toggleDrawer()" aria-label="Menu">
+          <span class="hamburger-bar"></span>
+          <span class="hamburger-bar"></span>
+          <span class="hamburger-bar"></span>
+        </button>
+        <div class="topbar-title-group">
+          <div class="topbar-brand">Minor<span>UPI</span></div>
+          <span class="topbar-divider">/</span>
+          <div id="topbar-page-name" class="topbar-page-name">Dashboard</div>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <a id="topbar-conn-badge" class="connection-status-pill status-disconnected" onclick="switchTab('connect')" title="Gateway & Poller Status">
+          <span class="status-dot"></span>
+          <span id="topbar-conn-text">Disconnected</span>
+        </a>
+        <button id="btn-topbar-create-link" class="btn btn-primary btn-sm" onclick="handleTopCreateLink()">+<span class="hide-xs"> Link</span></button>
+        <button class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle Theme" aria-label="Toggle Theme">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="main-viewport">
+      <div id="setup-incomplete-banner" class="setup-banner" hidden>
+        <div class="setup-banner-text">
+          <span>⚠</span>
+          <span id="setup-banner-msg">Setup incomplete: connect your UPI ID and Gmail to start accepting payments.</span>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="switchTab('connect')">Go to Connect</button>
+      </div>
+
+      <!-- 1. DASHBOARD -->
+      <section id="tab-dashboard" class="view">
+        <div class="page-header">
+          <div class="page-header-copy">
+            <h1>Overview</h1>
+            <p>Real-time telemetry and settlement summary.</p>
+          </div>
+          <div class="page-header-actions">
+            <button class="btn btn-secondary btn-sm" onclick="loadDashboard()">↻ Refresh</button>
+            <button class="btn btn-secondary btn-sm" onclick="switchTab('docs')">Docs</button>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">Total Volume</span>
+            <div class="stat-value">₹<span id="stat-total-received">0.00</span></div>
+            <span class="stat-subtext"><span id="stat-paid-count">0</span> paid orders</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Today's Volume</span>
+            <div class="stat-value">₹<span id="stat-today-amount">0.00</span></div>
+            <span class="stat-subtext"><span id="stat-today-count">0</span> today</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Pending</span>
+            <div class="stat-value"><span id="stat-pending-count">0</span></div>
+            <span class="stat-subtext">Awaiting payment</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Total Orders</span>
+            <div class="stat-value"><span id="stat-total-orders">0</span></div>
+            <span class="stat-subtext"><span id="stat-expired-count">0</span> exp · <span id="stat-cancelled-count">0</span> can · <span id="stat-failed-count">0</span> fail</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Daily Payment Volume (30 Days)</div>
+            <span style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Direct UPI Settlement</span>
+          </div>
+          <div id="chart-empty-container" class="empty-state-box" hidden>
+            <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>
+            </svg>
+            <div class="empty-state-title">No Transaction Activity Yet</div>
+            <p class="empty-state-text" style="margin-bottom: 0;">Completed payments appear here automatically.</p>
+          </div>
+          <div id="chart-canvas-wrap" style="height: 200px; position: relative;" hidden>
+            <canvas id="paymentsChart"></canvas>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Recent Transactions</div>
+            <button class="btn btn-secondary btn-sm" onclick="switchTab('transactions')">View All</button>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Order ID</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>UTR</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody id="recent-transactions-tbody"></tbody>
+            </table>
+            <div id="recent-empty-state" class="empty-state-box" hidden>
+              <div class="empty-state-title">No Payments Yet</div>
+              <p class="empty-state-text" style="margin-bottom: 0;">Connect your FamApp UPI and create your first payment link.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. CONNECT FAMAPP -->
+      <section id="tab-connect" class="view" hidden>
+        <div class="page-header">
+          <div class="page-header-copy">
+            <h1>Connect FamApp &amp; Gmail</h1>
+            <p>Configure IMAP polling for automated verification and inspect recent Fam emails.</p>
+          </div>
+        </div>
+
+        <div class="card" style="max-width: 720px;">
+          <div style="background: var(--bg-card-inner); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px; margin-bottom: var(--s-3); font-size: 0.84rem; color: var(--text-muted); line-height: 1.5;">
+            <strong style="color: var(--text-main);">How MinorUPI verifies payments:</strong>
+            Snapshots INBOX <code style="font-family: var(--font-mono);">UIDNEXT</code> + UTC creation timestamp per order, checks INBOX (plus Spam &amp; All Mail fallback), validates exact <code style="font-family: var(--font-mono);">Decimal</code> amount, and enforces unused UTRs.
+          </div>
+
+          <form id="connect-form" autocomplete="off">
+            <div class="form-group">
+              <label for="conn-upi-id">Your FamApp UPI ID</label>
+              <input type="text" id="conn-upi-id" class="form-control" placeholder="username@fam" required>
+            </div>
+            <div class="form-group">
+              <label for="conn-gmail">Gmail Address (Receiving FamApp Emails)</label>
+              <input type="email" id="conn-gmail" class="form-control" placeholder="you@gmail.com" required>
+            </div>
+            <div class="form-group">
+              <label for="conn-app-password">Google App Password (16 Characters)</label>
+              <input type="password" id="conn-app-password" class="form-control" placeholder="16-character Google App Password" required minlength="16">
+              <span style="font-size: 0.74rem; color: var(--text-dim); margin-top: 3px; display: block;">Encrypted at rest using Fernet AES.</span>
+            </div>
+            <div style="display: flex; gap: var(--s-2); flex-wrap: wrap;">
+              <button type="submit" id="btn-save-conn" class="btn btn-primary">Verify &amp; Save Connection</button>
+              <button type="button" id="btn-test-verification" class="btn btn-secondary" onclick="runTestVerification()">Test verification</button>
+              <button type="button" id="btn-disconnect-conn" class="btn btn-danger" onclick="disconnectFamApp()" hidden>Disconnect</button>
+            </div>
+          </form>
+
+          <div id="conn-status-card" style="margin-top: var(--s-3); padding: var(--s-3); border-radius: var(--radius-sm); border: 1px solid var(--border-color);" hidden>
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s-2);">
+              <div>
+                <div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Poller Status</div>
+                <div id="conn-last-checked" style="font-size: 0.82rem; color: var(--text-main); font-weight: 600;">Last poll: Never</div>
+              </div>
+              <span id="conn-status-badge" class="badge badge-expired">Disconnected</span>
+            </div>
+            <div id="conn-last-error" style="font-size: 0.8rem; color: var(--danger); margin-top: var(--s-2); overflow-wrap: anywhere;" hidden></div>
+          </div>
+        </div>
+
+        <div id="test-verify-card" class="card" style="max-width: 720px;" hidden>
+          <div class="card-header">
+            <div class="card-title">Last 5 FamApp Emails Diagnostic</div>
+            <span id="test-verify-summary" style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600;"></span>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Folder / UID</th>
+                  <th>Received</th>
+                  <th>Amount</th>
+                  <th>UTR</th>
+                  <th>Decision</th>
+                </tr>
+              </thead>
+              <tbody id="test-verify-tbody"></tbody>
+            </table>
+          </div>
+          <div id="test-verify-empty" class="empty-state-box" hidden>
+            <div class="empty-state-title">No FamApp Emails Found</div>
+            <p class="empty-state-text" style="margin-bottom: 0;">Checked INBOX, Spam, and All Mail.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. PAYMENT LINKS -->
+      <section id="tab-links" class="view" hidden>
+        <div class="page-header">
+          <div class="page-header-copy">
+            <h1>Payment Links</h1>
+            <p>Generate exact-amount UPI links with custom expiry.</p>
+            <div id="links-gated-subtext" class="action-subtext" hidden>Connect your UPI ID and Gmail first to create payment links.</div>
+          </div>
+          <div class="page-header-actions">
+            <button id="btn-create-link" class="btn btn-primary" onclick="openCreateLinkModal()">+ Create Payment Link</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Order ID</th>
+                  <th>Base</th>
+                  <th>Payable</th>
+                  <th>Status</th>
+                  <th>Expiry</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="links-table-tbody"></tbody>
+            </table>
+            <div id="links-empty-state" class="empty-state-box" hidden>
+              <div class="empty-state-title">No Payment Links Yet</div>
+              <p class="empty-state-text">Create a payment link to share directly with customers.</p>
+              <button id="btn-empty-create-link" class="btn btn-primary btn-sm" onclick="openCreateLinkModal()">+ Create Link</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. TRANSACTIONS -->
+      <section id="tab-transactions" class="view" hidden>
+        <div class="page-header">
+          <div class="page-header-copy">
+            <h1>Transactions &amp; Audit</h1>
+            <p>Orders, verification log decisions, and unmatched credits.</p>
+          </div>
+          <div class="page-header-actions">
+            <select id="filter-status" class="form-control" style="width: auto; min-width: 130px; min-height: 36px; padding: 5px 10px;" onchange="loadTransactions()">
+              <option value="">All Statuses</option>
+              <option value="paid">Paid</option>
+              <option value="pending">Pending</option>
+              <option value="expired">Expired</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="failed">Failed</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="exportTransactionsCSV()">Export CSV</button>
+          </div>
+        </div>
+
+        <div class="subtab-bar">
+          <button type="button" class="subtab-btn active" data-subtab="orders" onclick="switchTxSubtab('orders')">Orders</button>
+          <button type="button" class="subtab-btn" data-subtab="verify" onclick="switchTxSubtab('verify')">Verification log</button>
+          <button type="button" class="subtab-btn" data-subtab="unmatched" onclick="switchTxSubtab('unmatched')">Unmatched credits</button>
+        </div>
+
+        <div id="tx-pane-orders" class="subtab-pane">
+          <div class="card">
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Order ID</th>
+                    <th>Source</th>
+                    <th>Payable</th>
+                    <th>Status</th>
+                    <th>Expiry</th>
+                    <th>UTR</th>
+                    <th>Created</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="transactions-table-tbody"></tbody>
+              </table>
+              <div id="transactions-empty-state" class="empty-state-box" hidden>
+                <div class="empty-state-title">No Transactions Found</div>
+                <p class="empty-state-text" style="margin-bottom: 0;">Orders created via payment links or API appear here.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="tx-pane-verify" class="subtab-pane" hidden>
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Verification Log (Last 50)</div>
+                <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">UID inspection decisions and rejection/match reasons.</p>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="loadVerifyLogs()">↻ Refresh</button>
+            </div>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Order ID</th>
+                    <th>UID</th>
+                    <th>Amount</th>
+                    <th>UTR</th>
+                    <th>Decision</th>
+                    <th>Reason</th>
+                  </tr>
+                </thead>
+                <tbody id="verify-logs-tbody"></tbody>
+              </table>
+              <div id="verify-logs-empty-state" class="empty-state-box" hidden>
+                <div class="empty-state-title">No Verification Logs Yet</div>
+                <p class="empty-state-text" style="margin-bottom: 0;">Poller checks appear here automatically.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="tx-pane-unmatched" class="subtab-pane" hidden>
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Unmatched Credits</div>
+                <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">Emails received without an active matching order.</p>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="loadUnmatched()">↻ Refresh</button>
+            </div>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Amount</th>
+                    <th>Sender</th>
+                    <th>UTR</th>
+                    <th>Received</th>
+                    <th>Reason</th>
+                  </tr>
+                </thead>
+                <tbody id="unmatched-table-tbody"></tbody>
+              </table>
+              <div id="unmatched-empty-state" class="empty-state-box" hidden>
+                <div class="empty-state-title" style="color: var(--success);">No Unmatched Credits</div>
+                <p class="empty-state-text" style="margin-bottom: 0;">Every verified credit matched an active order.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. API & WEBHOOKS -->
+      <section id="tab-api" class="view" hidden>
+        <div class="page-header">
+          <div class="page-header-copy">
+            <h1>API Keys &amp; Webhooks</h1>
+            <p>Manage server-to-server keys and HMAC signing secrets.</p>
+            <div id="keys-gated-subtext" class="action-subtext" hidden>Connect your UPI ID and Gmail first to generate API keys.</div>
+          </div>
+          <div class="page-header-actions">
+            <button id="btn-create-key" class="btn btn-primary" onclick="openCreateApiKeyModal()">+ Generate API Key</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><div class="card-title">API Keys</div></div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody id="api-keys-tbody"></tbody>
+            </table>
+            <div id="keys-empty-state" class="empty-state-box" hidden>
+              <div class="empty-state-title">No API Keys</div>
+              <p class="empty-state-text">Create an API key to authenticate backend requests.</p>
+              <button id="btn-empty-create-key" class="btn btn-primary btn-sm" onclick="openCreateApiKeyModal()">+ Generate Key</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Webhook Signing Secret</div>
+            <button class="btn btn-danger btn-sm" onclick="confirmRegenerateWebhookSecret()">Regenerate</button>
+          </div>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: var(--s-2);">Verify webhooks with HMAC-SHA256 hex digest in the <code style="font-family: var(--font-mono); color: var(--primary);">X-Signature</code> header.</p>
+          <div class="inline-input-row">
+            <input type="text" id="webhook-secret-display" class="form-control" style="font-family: var(--font-mono);" readonly value="Loading...">
+            <button class="btn btn-secondary" onclick="copyWebhookSecret()">Copy</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Recent Webhook Deliveries</div>
+            <button class="btn btn-secondary btn-sm" onclick="loadWebhookLogs()">↻ Refresh</button>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead><tr><th>Order ID</th><th>Target URL</th><th>Attempt</th><th>Code</th><th>Status</th><th>Sent At</th></tr></thead>
+              <tbody id="webhook-logs-tbody"></tbody>
+            </table>
+            <div id="webhooks-empty-state" class="empty-state-box" hidden>
+              <div class="empty-state-title">No Webhooks Logged</div>
+              <p class="empty-state-text" style="margin-bottom: 0;">Webhook attempts appear here once triggered.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. DOCS + AI PROMPT -->
+      <section id="tab-docs" class="view" hidden>
+        <div class="page-header">
+          <div class="page-header-copy">
+            <h1>MinorUPI API Docs</h1>
+            <p>Reference guide, code examples, webhooks, expiry rules, and AI integration prompt.</p>
+          </div>
+        </div>
+
+        <div class="docs-controls-bar">
+          <select id="docs-section-jump" class="form-control" onchange="jumpToDocSection(this.value)">
+            <option value="">Jump to section...</option>
+            <option value="doc-intro">1. Intro &amp; Quickstart</option>
+            <option value="doc-auth">2. Authentication</option>
+            <option value="doc-endpoints">3. API Endpoints</option>
+            <option value="doc-snippets">4. Code Examples</option>
+            <option value="doc-webhooks">5. Webhooks &amp; HMAC</option>
+            <option value="doc-lifecycle">6. Lifecycle &amp; Expiry</option>
+            <option value="doc-faq">7. FAQ</option>
+            <option value="doc-ai-prompt">8. AI Integration Prompt</option>
+          </select>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAllDocSections(true)">Expand All</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAllDocSections(false)">Collapse All</button>
+        </div>
+
+        <div class="docs-accordion-list">
+          <details id="doc-intro" class="doc-section" open>
+            <summary><span>1. Introduction &amp; Quickstart</span><span class="doc-chevron">▼</span></summary>
+            <div class="doc-body">
+              <p><strong>MinorUPI</strong> lets you accept direct UPI payments via FamApp with exact Decimal matching, zero gateway fees, and real-time HMAC-SHA256 webhooks.</p>
+              <ul>
+                <li>Connect your FamApp UPI ID and Gmail App Password in <strong>Connect</strong>.</li>
+                <li>Generate a server API key in <strong>API</strong>.</li>
+                <li>Create orders with <code style="font-family: var(--font-mono);">POST /api/v1/orders</code> and redirect payers to <code style="font-family: var(--font-mono);">payment_url</code>.</li>
+              </ul>
+            </div>
+          </details>
+
+          <details id="doc-auth" class="doc-section">
+            <summary><span>2. Authentication</span><span class="doc-chevron">▼</span></summary>
+            <div class="doc-body">
+              <p>Authenticate backend calls to <code style="font-family: var(--font-mono);">/api/v1/*</code> with:</p>
+              <div class="code-box"><button class="copy-btn-code" onclick="copySnippet(this)">Copy</button><pre>Authorization: Bearer upi_live_your_key_here</pre></div>
+            </div>
+          </details>
+
+          <details id="doc-endpoints" class="doc-section">
+            <summary><span>3. API Endpoints</span><span class="doc-chevron">▼</span></summary>
+            <div class="doc-body">
+              <h4>POST /api/v1/orders (Default 5-min expiry)</h4>
+              <div class="code-box"><button class="copy-btn-code" onclick="copySnippet(this)">Copy</button><pre>{
+  "amount": 1.00,
+  "order_id": "ORD_1001",
+  "expiry_minutes": 5,
+  "callback_url": "https://yoursite.com/api/webhook",
+  "redirect_url": "https://yoursite.com/success",
+  "note": "Order #1001"
+}</pre></div>
+              <h4>GET /api/v1/orders/{order_id}</h4>
+              <div class="code-box"><button class="copy-btn-code" onclick="copySnippet(this)">Copy</button><pre>GET /api/v1/orders/ORD_1001
+Authorization: Bearer &lt;YOUR_API_KEY&gt;</pre></div>
+            </div>
+          </details>
+
+          <details id="doc-snippets" class="doc-section">
+            <summary><span>4. Code Examples (cURL / Python / Node.js / PHP)</span><span class="doc-chevron">▼</span></summary>
+            <div class="doc-body">
+              <h4>cURL</h4>
+              <div class="code-box"><button class="copy-btn-code" onclick="copySnippet(this)">Copy</button><pre>curl -X POST https://YOUR_GATEWAY/api/v1/orders \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"amount": 1.00, "callback_url": "https://yoursite.com/webhook"}'</pre></div>
+              <h4>Python</h4>
+              <div class="code-box"><button class="copy-btn-code" onclick="copySnippet(this)">Copy</button><pre>import requests
+r = requests.post("https://YOUR_GATEWAY/api/v1/orders",
+    headers={"Authorization": "Bearer YOUR_API_KEY"},
+    json={"amount": 1.00, "callback_url": "https://yoursite.com/webhook"})
+print(r.json()["data"]["payment_url"])</pre></div>
+              <h4>Node.js</h4>
+              <div class="code-box"><button class="copy-btn-code" onclick="copySnippet(this)">Copy</button><pre>const res = await fetch("https://YOUR_GATEWAY/api/v1/orders", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", "Authorization": "Bearer YOUR_API_KEY" },
+  body: JSON.stringify({ amount: 1.00, callback_url: "https://yoursite.com/webhook" })
+});
+const { data } = await res.json();</pre></div>
+            </div>
+          </details>
+
+          <details id="doc-webhooks" class="doc-section">
+            <summary><span>5. Webhooks &amp; HMAC-SHA256</span><span class="doc-chevron">▼</span></summary>
+            <div class="doc-body">
+              <div class="code-box"><button class="copy-btn-code" onclick="copySnippet(this)">Copy</button><pre>import hmac, hashlib
+expected = hmac.new(WEBHOOK_SECRET.encode(), raw_body, hashlib.sha256).hexdigest()
+valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</pre></div>
+            </div>
+          </details>
+
+          <details id="doc-lifecycle" class="doc-section">
+            <summary><span>6. Lifecycle &amp; Expiry Rules</span><span class="doc-chevron">▼</span></summary>
+            <div class="doc-body">
+              <ul>
+                <li>Exact entered amount (`1.00` stays `1.00`) unless another non-expired `pending` order already uses that payable amount.</li>
+                <li>API orders default to 5 minutes; Payment Links use custom minutes. UTC `expires_at` never resets on page refresh.</li>
+                <li>Paid orders never expire; late credits arriving after `expires_at` go to Unmatched credits.</li>
+              </ul>
+            </div>
+          </details>
+
+          <details id="doc-faq" class="doc-section">
+            <summary><span>7. FAQ</span><span class="doc-chevron">▼</span></summary>
+            <div class="doc-body">
+              <p><strong>Why did Test verification check Spam &amp; All Mail?</strong><br>Gmail sometimes routes notification emails outside INBOX; MinorUPI checks INBOX first and falls back read-only to Spam and All Mail.</p>
+            </div>
+          </details>
+
+          <details id="doc-ai-prompt" class="doc-section" open>
+            <summary><span>8. Copy AI Integration Prompt</span><span class="doc-chevron">▼</span></summary>
+            <div class="doc-body">
+              <div style="display: flex; gap: var(--s-3); flex-wrap: wrap; margin-bottom: var(--s-3);">
+                <div style="flex: 1 1 180px;">
+                  <label style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">Target Stack</label>
+                  <select id="docs-prompt-stack" class="form-control" style="min-height: 36px; padding: 5px 10px; font-size: 0.85rem;">
+                    <option value="python">Python (Flask / FastAPI)</option>
+                    <option value="node">Node.js (Express)</option>
+                    <option value="php">PHP (Vanilla / Laravel)</option>
+                    <option value="frontend">HTML + JS (with Backend)</option>
+                    <option value="telegram_python">Telegram Bot (Python)</option>
+                    <option value="telegram_node">Telegram Bot (Node.js)</option>
+                  </select>
+                </div>
+                <div style="display: flex; align-items: flex-end; gap: var(--s-3); flex-wrap: wrap; padding-bottom: 4px;">
+                  <label style="font-size: 0.82rem; font-weight: 600; color: var(--text-main); display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <input type="checkbox" id="docs-prompt-inc-key"> Include Key Prefix
+                  </label>
+                  <label style="font-size: 0.82rem; font-weight: 600; color: var(--text-main); display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <input type="checkbox" id="docs-prompt-inc-sec"> Include Webhook Secret
+                  </label>
+                </div>
+              </div>
+              <div style="display: flex; gap: var(--s-2); flex-wrap: wrap; margin-bottom: var(--s-3);">
+                <button type="button" id="docs-btn-copy-prompt" class="btn btn-primary btn-sm">Copy AI Integration Prompt</button>
+                <a id="docs-btn-download-prompt" href="/ai-prompt.txt" download="minorupi-prompt.txt" class="btn btn-secondary btn-sm">Download .txt</a>
+              </div>
+              <div class="code-box">
+                <pre id="docs-prompt-preview" style="max-height: 220px; overflow-y: auto; white-space: pre-wrap; padding-right: 0;">Loading AI prompt...</pre>
+              </div>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- 7. SETTINGS -->
+      <section id="tab-settings" class="view" hidden>
+        <div class="page-header">
+          <div class="page-header-copy">
+            <h1>Gateway Settings</h1>
+            <p>Update administrator profile and password.</p>
+          </div>
+        </div>
+        <div class="card" style="max-width: 540px;">
+          <form id="settings-profile-form">
+            <div class="form-group">
+              <label for="settings-name">Merchant / Admin Name</label>
+              <input type="text" id="settings-name" class="form-control" required>
+            </div>
+            <div class="form-group">
+              <label for="settings-email">Admin Email</label>
+              <input type="email" id="settings-email" class="form-control" required>
+            </div>
+            <hr style="border: none; border-top: 1px solid var(--border-color); margin: var(--s-4) 0;">
+            <div style="font-size: 0.9rem; font-weight: 700; color: var(--text-main); margin-bottom: var(--s-3);">Change Password</div>
+            <div class="form-group">
+              <label for="settings-current-password">Current Password</label>
+              <input type="password" id="settings-current-password" class="form-control" autocomplete="current-password">
+            </div>
+            <div class="form-group">
+              <label for="settings-new-password">New Password (Optional)</label>
+              <input type="password" id="settings-new-password" class="form-control" minlength="6" autocomplete="new-password">
+            </div>
+            <div class="form-group">
+              <label for="settings-confirm-password">Confirm New Password</label>
+              <input type="password" id="settings-confirm-password" class="form-control" minlength="6" autocomplete="new-password">
+            </div>
+            <button type="submit" id="btn-save-settings" class="btn btn-primary">Save Profile Changes</button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <!-- MODALS -->
+    <div id="modal-create-link" class="modal-backdrop">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3 class="modal-title">Create Payment Link</h3>
+          <button type="button" class="drawer-close-btn" onclick="closeModal('modal-create-link')">✕</button>
+        </div>
+        <form id="form-create-link">
+          <div class="form-group">
+            <label for="link-amount">Amount (INR)</label>
+            <input type="number" step="0.01" min="0.01" id="link-amount" class="form-control" placeholder="1.00" required>
+          </div>
+          <div class="form-group">
+            <label for="link-expiry">Link Expiry (Minutes)</label>
+            <input type="number" min="1" max="10080" id="link-expiry" class="form-control" value="10" required>
+          </div>
+          <div class="form-group">
+            <label for="link-note">Note / Description (Optional)</label>
+            <input type="text" id="link-note" class="form-control" placeholder="e.g. Subscription">
+          </div>
+          <div class="form-group">
+            <label for="link-redirect-url">Customer Redirect URL (Optional)</label>
+            <input type="url" id="link-redirect-url" class="form-control" placeholder="https://yoursite.com/success">
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('modal-create-link')">Cancel</button>
+            <button type="submit" id="btn-submit-create-link" class="btn btn-primary">Generate Link</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="modal-create-key" class="modal-backdrop">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3 class="modal-title">Generate API Key</h3>
+          <button type="button" class="drawer-close-btn" onclick="closeModal('modal-create-key')">✕</button>
+        </div>
+        <form id="form-create-key">
+          <div class="form-group">
+            <label for="key-name">Key Name</label>
+            <input type="text" id="key-name" class="form-control" placeholder="e.g. Production Backend" required>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('modal-create-key')">Cancel</button>
+            <button type="submit" id="btn-submit-create-key" class="btn btn-primary">Generate</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="modal-show-key" class="modal-backdrop">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3 class="modal-title" style="color: var(--success);">API Key Generated</h3>
+          <button type="button" class="drawer-close-btn" onclick="closeModal('modal-show-key')">✕</button>
+        </div>
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: var(--s-2);">Copy this key now. It will not be shown again.</p>
+        <div class="form-group">
+          <textarea id="new-key-display" class="form-control" rows="3" readonly style="font-family: var(--font-mono); font-size: 13px; resize: none;"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-show-key')">Done</button>
+          <button type="button" class="btn btn-primary" onclick="copyNewKey()">Copy Key</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-confirm" class="modal-backdrop">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3 id="modal-confirm-title" class="modal-title">Confirm Action</h3>
+          <button type="button" class="drawer-close-btn" onclick="closeConfirmModal(false)">✕</button>
+        </div>
+        <p id="modal-confirm-message" style="font-size: 0.86rem; color: var(--text-muted);"></p>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeConfirmModal(false)">Cancel</button>
+          <button type="button" id="modal-confirm-btn" class="btn btn-danger" onclick="closeConfirmModal(true)">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <script>
-    let currentOrderId = null;
-    let orderRedirectUrl = null;
-    let pollInterval = null;
-    let timerCountdownInterval = null;
-    let clientTargetEndMs = null;
-    let currentStatus = 'pending';
-    let redirectScheduled = false;
+    let csrfToken = '';
+    let isGatewayConfigured = false;
+    let appInitialized = false;
+    let chartLibLoaded = false;
+    let paymentsChartInstance = null;
+    let pendingConfirmResolve = null;
+    let serverOffsetMs = 0;
+
+    // Checkout State
+    let coOrderId = null;
+    let coRedirectUrl = null;
+    let coPollInterval = null;
+    let coTimerInterval = null;
+    let coTargetEndMs = null;
+    let coStatus = 'pending';
+    let coRedirectScheduled = false;
 
     function showToast(message, type = 'info') {
       const container = document.getElementById('toast-container');
@@ -633,220 +2480,1070 @@
       setTimeout(() => {
         toast.style.opacity = '0';
         toast.style.transform = 'translateX(100%)';
-        setTimeout(() => toast.remove(), 250);
+        setTimeout(() => toast.remove(), 220);
       }, 3500);
     }
 
-    function syncServerClock(serverNowIso, expiresAtIso, remainingSeconds) {
-      const serverNowMs = serverNowIso ? Date.parse(serverNowIso) : NaN;
-      const expiresMs = expiresAtIso ? Date.parse(expiresAtIso) : NaN;
-      if (!Number.isNaN(serverNowMs) && !Number.isNaN(expiresMs)) {
-        const remainingMs = Math.max(0, expiresMs - serverNowMs);
-        clientTargetEndMs = Date.now() + remainingMs;
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function showTopScreen(name) {
+      document.getElementById('checkout').hidden = (name !== 'checkout');
+      document.getElementById('auth').hidden = (name !== 'setup' && name !== 'login');
+      document.getElementById('screen-setup').hidden = (name !== 'setup');
+      document.getElementById('screen-login').hidden = (name !== 'login');
+      document.getElementById('app').hidden = (name !== 'app');
+      document.body.classList.toggle('mode-checkout', name === 'checkout');
+    }
+
+    /* ========================================================================
+       CHECKOUT MODE LOGIC (/pay/<order_id>)
+       ======================================================================== */
+    function coSyncServerClock(serverNowIso, expiresAtIso, remainingSeconds) {
+      const sMs = serverNowIso ? Date.parse(serverNowIso) : NaN;
+      const eMs = expiresAtIso ? Date.parse(expiresAtIso) : NaN;
+      if (!Number.isNaN(sMs) && !Number.isNaN(eMs)) {
+        coTargetEndMs = Date.now() + Math.max(0, eMs - sMs);
       } else {
-        const secs = Math.max(0, Number(remainingSeconds || 0));
-        clientTargetEndMs = Date.now() + secs * 1000;
+        coTargetEndMs = Date.now() + Math.max(0, Number(remainingSeconds || 0)) * 1000;
       }
     }
 
-    function showCheckoutUnavailable(message) {
-      currentStatus = 'unavailable';
-      if (timerCountdownInterval) clearInterval(timerCountdownInterval);
-
-      document.querySelectorAll('.qr-status-overlay').forEach(el => el.classList.remove('active'));
-      document.getElementById('co-qr-img').style.display = 'none';
-      document.getElementById('co-qr-caption').style.display = 'none';
-      document.getElementById('co-actions-row').style.display = 'none';
-      document.getElementById('co-expiry-row').style.display = 'none';
-      document.getElementById('co-offset-note').style.display = 'none';
-      document.getElementById('co-pulse-dot').style.display = 'none';
-
-      const verPill = document.getElementById('co-verification-pill');
-      const verText = document.getElementById('co-verification-text');
-      verPill.style.background = '#fef3c7';
-      verPill.style.color = '#92400e';
-      verText.innerText = 'Unavailable';
-
-      document.getElementById('co-unavailable-reason').innerText =
-        message || 'Merchant is not configured / temporarily unavailable.';
-      document.getElementById('co-overlay-unavailable').classList.add('active');
+    function coHideAllStates() {
+      ['co-state-paid', 'co-state-expired', 'co-state-cancelled', 'co-state-failed', 'co-state-unavailable'].forEach(id => {
+        document.getElementById(id).hidden = true;
+      });
     }
 
-    async function loadCheckoutData(orderId) {
-      try {
-        const res = await fetch(`/api/public/order/${encodeURIComponent(orderId)}`, { credentials: 'same-origin' });
-        const data = await res.json();
-        if (!data.success) {
-          const msg = data.error?.message || 'Merchant is not configured / temporarily unavailable.';
-          showCheckoutUnavailable(msg);
-          showToast(msg, 'error');
-          return;
-        }
-
-        const o = data.order;
-        document.getElementById('co-merchant-name').innerText = o.merchant_name || 'MinorUPI Merchant';
-        document.getElementById('co-order-id').innerText = o.order_id;
-        document.getElementById('co-amount').innerText = Number(o.payable_amount).toFixed(2);
-        document.getElementById('co-qr-img').src = o.qr_base64;
-        document.getElementById('co-btn-save-qr').href = `/api/public/qr/${o.order_id}.png`;
-        document.getElementById('co-btn-pay-now').href = o.upi_link;
-        orderRedirectUrl = o.redirect_url;
-
-        const hasOffset = Math.abs(Number(o.payable_amount) - Number(o.base_amount)) >= 0.005;
-        document.getElementById('co-offset-note').dataset.hasOffset = hasOffset ? '1' : '0';
-
-        syncServerClock(o.server_now || data.server_now, o.expires_at, o.remaining_seconds ?? o.seconds_left);
-        updateCheckoutStatus(o.status, o.utr, o.fail_reason);
-
-        if (o.status === 'pending') {
-          startCountdownTimer();
-          if (pollInterval) clearInterval(pollInterval);
-          pollInterval = setInterval(() => pollCheckoutStatus(orderId), 3000);
-        }
-      } catch (err) {
-        console.error('Failed to load checkout:', err);
-        showCheckoutUnavailable('Unable to reach payment gateway.');
-      }
+    function coShowUnavailable(message) {
+      coStatus = 'unavailable';
+      if (coTimerInterval) { clearInterval(coTimerInterval); coTimerInterval = null; }
+      coHideAllStates();
+      document.getElementById('co-qr-frame').hidden = true;
+      document.getElementById('co-qr-caption').hidden = true;
+      document.getElementById('co-actions-row').hidden = true;
+      document.getElementById('co-expiry-row').hidden = true;
+      document.getElementById('co-offset-note').hidden = true;
+      document.getElementById('co-pulse-dot').hidden = true;
+      const pill = document.getElementById('co-verification-pill');
+      pill.style.background = '#fef3c7';
+      pill.style.borderColor = '#fde68a';
+      pill.style.color = '#92400e';
+      document.getElementById('co-verification-text').innerText = 'Unavailable';
+      document.getElementById('co-unavailable-reason').innerText = message || 'Merchant is not configured / temporarily unavailable.';
+      document.getElementById('co-state-unavailable').hidden = false;
     }
 
-    async function pollCheckoutStatus(orderId) {
-      try {
-        const res = await fetch(`/api/public/status/${encodeURIComponent(orderId)}`, { credentials: 'same-origin' });
-        const data = await res.json();
-        if (data.success) {
-          syncServerClock(data.server_now, data.expires_at, data.remaining_seconds ?? data.seconds_left);
-          updateCheckoutStatus(data.status, data.utr, data.fail_reason);
-          if (data.status !== 'pending' && pollInterval) {
-            clearInterval(pollInterval);
-            pollInterval = null;
-          }
-        } else if (data.error?.code === 'NOT_CONFIGURED') {
-          if (pollInterval) {
-            clearInterval(pollInterval);
-            pollInterval = null;
-          }
-          showCheckoutUnavailable(data.error.message);
-        }
-      } catch (err) {
-        console.error('Polling error:', err);
-      }
-    }
-
-    function updateCheckoutStatus(status, utr, failReason) {
-      currentStatus = status;
-      const verPill = document.getElementById('co-verification-pill');
-      const verText = document.getElementById('co-verification-text');
-      const pulseDot = document.getElementById('co-pulse-dot');
-      const qrImg = document.getElementById('co-qr-img');
-      const qrCaption = document.getElementById('co-qr-caption');
+    function coRenderStatus(status, utr, failReason) {
+      coStatus = status;
+      coHideAllStates();
+      const qrFrame = document.getElementById('co-qr-frame');
+      const qrCap = document.getElementById('co-qr-caption');
       const actionsRow = document.getElementById('co-actions-row');
       const expiryRow = document.getElementById('co-expiry-row');
       const offsetNote = document.getElementById('co-offset-note');
-
-      document.querySelectorAll('.qr-status-overlay').forEach(el => el.classList.remove('active'));
+      const pulseDot = document.getElementById('co-pulse-dot');
+      const pill = document.getElementById('co-verification-pill');
+      const verText = document.getElementById('co-verification-text');
 
       if (status === 'pending') {
-        qrImg.style.display = 'block';
-        qrImg.style.filter = 'none';
-        qrCaption.style.display = 'block';
-        actionsRow.style.display = 'grid';
-        expiryRow.style.display = 'flex';
-        offsetNote.style.display = offsetNote.dataset.hasOffset === '1' ? 'block' : 'none';
-        pulseDot.style.display = 'inline-block';
-        verPill.style.background = '#dbeafe';
-        verPill.style.color = '#1d4ed8';
+        qrFrame.hidden = false;
+        qrCap.hidden = false;
+        actionsRow.hidden = false;
+        expiryRow.hidden = false;
+        offsetNote.hidden = (offsetNote.dataset.hasOffset !== '1');
+        pulseDot.hidden = false;
+        pill.style.background = '#cddbf0';
+        pill.style.borderColor = '#b3c7e6';
+        pill.style.color = '#1644b8';
         verText.innerText = 'Waiting for payment...';
         return;
       }
 
-      // For ALL terminal states (paid, expired, cancelled, failed):
-      // completely remove Pay Now, Save QR, and Expires In row (zero leftover gap)
-      if (timerCountdownInterval) {
-        clearInterval(timerCountdownInterval);
-        timerCountdownInterval = null;
-      }
-      qrImg.style.display = 'none';
-      qrCaption.style.display = 'none';
-      actionsRow.style.display = 'none';
-      expiryRow.style.display = 'none';
-      offsetNote.style.display = 'none';
-      pulseDot.style.display = 'none';
+      // Terminal states: completely remove Pay Now, Save QR, and Expires In timer
+      if (coTimerInterval) { clearInterval(coTimerInterval); coTimerInterval = null; }
+      qrFrame.hidden = true;
+      qrCap.hidden = true;
+      actionsRow.hidden = true;
+      expiryRow.hidden = true;
+      offsetNote.hidden = true;
+      pulseDot.hidden = true;
 
       if (status === 'paid') {
-        verPill.style.background = '#d1fae5';
-        verPill.style.color = '#065f46';
+        pill.style.background = '#d1fae5';
+        pill.style.borderColor = '#a7f3d0';
+        pill.style.color = '#065f46';
         verText.innerText = 'Payment Verified';
-        document.getElementById('co-paid-amount').innerText = document.getElementById('co-amount').innerText;
         document.getElementById('co-paid-utr').innerText = utr || 'Verified';
-        document.getElementById('co-overlay-paid').classList.add('active');
-
-        if (orderRedirectUrl && !redirectScheduled) {
-          redirectScheduled = true;
-          const rElem = document.getElementById('co-redirect-countdown');
-          rElem.style.display = 'block';
-          setTimeout(() => {
-            window.location.href = orderRedirectUrl;
-          }, 3000);
+        document.getElementById('co-state-paid').hidden = false;
+        if (coRedirectUrl && !coRedirectScheduled) {
+          coRedirectScheduled = true;
+          document.getElementById('co-redirect-countdown').hidden = false;
+          setTimeout(() => { window.location.href = coRedirectUrl; }, 3000);
         }
       } else if (status === 'expired') {
-        verPill.style.background = '#f1f5f9';
-        verPill.style.color = '#64748b';
+        pill.style.background = '#f1f5f9';
+        pill.style.borderColor = '#cbd5e1';
+        pill.style.color = '#475569';
         verText.innerText = 'Order Expired';
         document.getElementById('co-timer').innerText = '00:00';
-        document.getElementById('co-overlay-expired').classList.add('active');
+        document.getElementById('co-state-expired').hidden = false;
       } else if (status === 'cancelled') {
-        verPill.style.background = '#fef3c7';
-        verPill.style.color = '#92400e';
+        pill.style.background = '#fef3c7';
+        pill.style.borderColor = '#fde68a';
+        pill.style.color = '#92400e';
         verText.innerText = 'Order Cancelled';
-        document.getElementById('co-overlay-cancelled').classList.add('active');
+        document.getElementById('co-state-cancelled').hidden = false;
       } else if (status === 'failed') {
-        verPill.style.background = '#fee2e2';
-        verPill.style.color = '#991b1b';
+        pill.style.background = '#fee2e2';
+        pill.style.borderColor = '#fecaca';
+        pill.style.color = '#991b1b';
         verText.innerText = 'Verification Failed';
         if (failReason) document.getElementById('co-fail-reason').innerText = failReason;
-        document.getElementById('co-overlay-failed').classList.add('active');
+        document.getElementById('co-state-failed').hidden = false;
       }
     }
 
-    function startCountdownTimer() {
-      if (timerCountdownInterval) clearInterval(timerCountdownInterval);
-      const timerElem = document.getElementById('co-timer');
-
-      function update() {
-        if (currentStatus !== 'pending' || clientTargetEndMs === null) {
-          return;
-        }
-        const rem = Math.max(0, Math.ceil((clientTargetEndMs - Date.now()) / 1000));
+    function coStartTimer() {
+      if (coTimerInterval) clearInterval(coTimerInterval);
+      const timerEl = document.getElementById('co-timer');
+      function tick() {
+        if (coStatus !== 'pending' || coTargetEndMs === null) return;
+        const rem = Math.max(0, Math.ceil((coTargetEndMs - Date.now()) / 1000));
         if (rem <= 0) {
-          timerElem.innerText = '00:00';
-          clearInterval(timerCountdownInterval);
-          timerCountdownInterval = null;
-          updateCheckoutStatus('expired', null, null);
-          if (currentOrderId) pollCheckoutStatus(currentOrderId);
+          timerEl.innerText = '00:00';
+          clearInterval(coTimerInterval);
+          coTimerInterval = null;
+          coRenderStatus('expired', null, null);
+          if (coOrderId) coPollStatus();
           return;
         }
         const m = Math.floor(rem / 60);
         const s = rem % 60;
-        timerElem.innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        timerEl.innerText = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
       }
+      tick();
+      if (coStatus === 'pending') coTimerInterval = setInterval(tick, 500);
+    }
 
-      update();
-      if (currentStatus === 'pending') {
-        timerCountdownInterval = setInterval(update, 500);
+    async function coPollStatus() {
+      if (!coOrderId) return;
+      try {
+        const res = await fetch(`/api/public/status/${encodeURIComponent(coOrderId)}`, { credentials: 'same-origin' });
+        const data = await res.json();
+        if (data.success) {
+          coSyncServerClock(data.server_now, data.expires_at, data.remaining_seconds ?? data.seconds_left);
+          coRenderStatus(data.status, data.utr, data.fail_reason);
+          if (data.status !== 'pending' && coPollInterval) {
+            clearInterval(coPollInterval);
+            coPollInterval = null;
+          }
+        } else if (data.error?.code === 'NOT_CONFIGURED') {
+          if (coPollInterval) { clearInterval(coPollInterval); coPollInterval = null; }
+          coShowUnavailable(data.error.message);
+        }
+      } catch (e) {}
+    }
+
+    async function initCheckoutPage(orderId) {
+      coOrderId = orderId;
+      document.title = `MinorUPI — Checkout ${orderId}`;
+      showTopScreen('checkout');
+      try {
+        const res = await fetch(`/api/public/order/${encodeURIComponent(orderId)}`, { credentials: 'same-origin' });
+        const data = await res.json();
+        if (!data.success) {
+          coShowUnavailable(data.error?.message);
+          return;
+        }
+        const o = data.order;
+        const payStr = Number(o.payable_amount).toFixed(2);
+        document.getElementById('co-merchant-name').innerText = o.merchant_name || 'MinorUPI Merchant';
+        document.getElementById('co-order-id').innerText = o.order_id;
+        document.getElementById('co-amount').innerText = payStr;
+        document.getElementById('co-offset-exact').innerText = payStr;
+        document.getElementById('co-qr-img').src = o.qr_base64;
+        document.getElementById('co-btn-save-qr').href = `/api/public/qr/${o.order_id}.png`;
+        document.getElementById('co-btn-pay-now').href = o.upi_link;
+        coRedirectUrl = o.redirect_url;
+
+        const hasOffset = Math.abs(Number(o.payable_amount) - Number(o.base_amount)) >= 0.005;
+        document.getElementById('co-offset-note').dataset.hasOffset = hasOffset ? '1' : '0';
+
+        coSyncServerClock(o.server_now || data.server_now, o.expires_at, o.remaining_seconds ?? o.seconds_left);
+        coRenderStatus(o.status, o.utr, o.fail_reason);
+        if (o.status === 'pending') {
+          coStartTimer();
+          if (coPollInterval) clearInterval(coPollInterval);
+          coPollInterval = setInterval(coPollStatus, 3000);
+        }
+      } catch (e) {
+        coShowUnavailable('Unable to reach payment gateway.');
       }
     }
 
-    window.addEventListener('DOMContentLoaded', () => {
+    /* ========================================================================
+       ADMIN / AUTH SPA API & ROUTING
+       ======================================================================== */
+    async function fetchCsrfToken(force = false) {
+      if (csrfToken && !force) return csrfToken;
+      try {
+        const res = await fetch('/api/csrf', { credentials: 'same-origin' });
+        const data = await res.json();
+        if (data.success && data.token) csrfToken = data.token;
+      } catch (e) {}
+      return csrfToken;
+    }
+
+    async function api(path, method = 'GET', body = null, _retried = false) {
+      const upper = method.toUpperCase();
+      const isMut = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(upper);
+      if (isMut && !csrfToken) await fetchCsrfToken(true);
+
+      const headers = {};
+      if (isMut) {
+        headers['X-CSRF-Token'] = csrfToken;
+        headers['Content-Type'] = 'application/json';
+      } else if (body !== null && body !== undefined) {
+        headers['Content-Type'] = 'application/json';
+      }
+
+      const opts = { method: upper, credentials: 'same-origin', headers };
+      if (body !== null && body !== undefined) opts.body = JSON.stringify(body);
+
+      const res = await fetch(path, opts);
+      let data;
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) data = await res.json();
+      else data = { success: res.ok, error: { code: 'HTTP_' + res.status, message: await res.text() } };
+
+      if (res.status === 403 && data?.error?.code === 'CSRF_INVALID' && !_retried) {
+        await fetchCsrfToken(true);
+        return api(path, method, body, true);
+      }
+      if (res.status === 401 && path !== '/api/login') {
+        showTopScreen('login');
+        await fetchCsrfToken(true);
+      }
+      return { status: res.status, ok: res.ok, data };
+    }
+
+    function ensureChartJsLoaded() {
+      if (chartLibLoaded || window.Chart) { chartLibLoaded = true; return Promise.resolve(); }
+      return new Promise((resolve) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
+        s.onload = () => { chartLibLoaded = true; resolve(); };
+        s.onerror = () => resolve();
+        document.head.appendChild(s);
+      });
+    }
+
+    async function bootstrapSession() {
       const path = window.location.pathname;
       if (path.startsWith('/pay/')) {
-        currentOrderId = decodeURIComponent(path.split('/pay/')[1].split('/')[0]);
-        if (currentOrderId) {
-          loadCheckoutData(currentOrderId);
+        const orderId = decodeURIComponent(path.split('/pay/')[1].split('/')[0]);
+        if (orderId) {
+          initCheckoutPage(orderId);
           return;
         }
+        showTopScreen('checkout');
+        coShowUnavailable('Invalid or missing payment order link.');
+        return;
       }
-      showCheckoutUnavailable('Invalid or missing payment order link.');
+
+      initTheme();
+      await fetchCsrfToken(true);
+      try {
+        const res = await fetch('/api/session/state', { credentials: 'same-origin' });
+        const state = await res.json();
+        if (!state.has_admin) {
+          showTopScreen('setup');
+          if (path !== '/setup') window.history.replaceState({}, '', '/setup');
+          return;
+        }
+        if (!state.logged_in) {
+          showTopScreen('login');
+          if (path !== '/login' && path !== '/docs') window.history.replaceState({}, '', '/login');
+          return;
+        }
+        await enterLoggedInApp(state.configured);
+      } catch (e) {
+        showTopScreen('login');
+      }
+    }
+
+    async function enterLoggedInApp(configuredHint = null) {
+      const { data } = await api('/api/me');
+      if (!data.logged_in) {
+        showTopScreen(data.admin_exists ? 'login' : 'setup');
+        return;
+      }
+      if (data.csrf_token) csrfToken = data.csrf_token;
+      document.getElementById('drawer-user-name').innerText = data.admin?.name || 'Administrator';
+      document.getElementById('drawer-user-email').innerText = data.admin?.email || 'admin';
+      document.getElementById('drawer-user-avatar').innerText = (data.admin?.name || 'A')[0].toUpperCase();
+
+      const configured = configuredHint !== null ? Boolean(configuredHint) : Boolean(data.is_configured);
+      updateConfigurationGateUI(configured, true, null);
+      showTopScreen('app');
+      await ensureChartJsLoaded();
+
+      const path = window.location.pathname;
+      if (path === '/docs') switchTab('docs', false);
+      else if (!configured) switchTab('connect', false);
+      else switchTab('dashboard', false);
+
+      if (!appInitialized) {
+        appInitialized = true;
+        setInterval(() => {
+          if (document.getElementById('app').hidden) return;
+          const activeView = document.querySelector('#app .view:not([hidden])')?.id;
+          if (activeView === 'tab-dashboard') { loadDashboard(); loadConnection(); }
+          else if (activeView === 'tab-connect') { loadConnection(); }
+          else if (activeView === 'tab-links') { loadPaymentLinks(); }
+          else if (activeView === 'tab-transactions') {
+            const sub = document.querySelector('#app .subtab-btn.active')?.dataset?.subtab;
+            if (sub === 'orders') loadTransactions();
+            else if (sub === 'verify') loadVerifyLogs();
+          }
+        }, 10000);
+        setInterval(updatePendingExpiryCountdowns, 1000);
+      }
+    }
+
+    document.getElementById('setup-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const alertBox = document.getElementById('setup-alert');
+      alertBox.hidden = true;
+      const name = document.getElementById('setup-name').value.trim();
+      const email = document.getElementById('setup-email').value.trim();
+      const password = document.getElementById('setup-password').value;
+      const confirm_password = document.getElementById('setup-confirm').value;
+
+      if (password !== confirm_password) {
+        alertBox.innerText = 'Passwords do not match';
+        alertBox.hidden = false;
+        return;
+      }
+      const btn = document.getElementById('btn-submit-setup');
+      btn.disabled = true; btn.innerText = 'Creating Account...';
+      try {
+        const { data } = await api('/api/setup', 'POST', { name, email, password, confirm_password });
+        if (data.success) {
+          if (data.csrf_token) csrfToken = data.csrf_token;
+          showToast('Admin account created!', 'success');
+          window.history.replaceState({}, '', '/dashboard');
+          await enterLoggedInApp(false);
+        } else {
+          alertBox.innerText = data.error?.message || 'Setup failed';
+          alertBox.hidden = false;
+          await fetchCsrfToken(true);
+        }
+      } catch (err) {
+        alertBox.innerText = 'Network error. Please try again.';
+        alertBox.hidden = false;
+      } finally {
+        btn.disabled = false; btn.innerText = 'Create Admin Account & Launch';
+      }
     });
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const alertBox = document.getElementById('login-alert');
+      alertBox.hidden = true;
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+
+      const btn = document.getElementById('btn-submit-login');
+      btn.disabled = true; btn.innerText = 'Signing In...';
+      try {
+        const { data } = await api('/api/login', 'POST', { email, password });
+        if (data.success) {
+          if (data.csrf_token) csrfToken = data.csrf_token;
+          document.getElementById('login-password').value = '';
+          showToast('Signed in to MinorUPI!', 'success');
+          const res = await fetch('/api/session/state', { credentials: 'same-origin' });
+          const st = await res.json();
+          if (window.location.pathname !== '/docs') window.history.replaceState({}, '', '/dashboard');
+          await enterLoggedInApp(st.configured);
+        } else {
+          alertBox.innerText = data.error?.message || 'Invalid email or password';
+          alertBox.hidden = false;
+          await fetchCsrfToken(true);
+        }
+      } catch (err) {
+        alertBox.innerText = 'Network error. Please try again.';
+        alertBox.hidden = false;
+      } finally {
+        btn.disabled = false; btn.innerText = 'Sign In to Dashboard';
+      }
+    });
+
+    /* ========================================================================
+       APP UI CONTROLS, DRAWER & THEME
+       ======================================================================== */
+    function updateConfigurationGateUI(configured, pollOk = true, lastError = null) {
+      isGatewayConfigured = Boolean(configured);
+      const badge = document.getElementById('topbar-conn-badge');
+      const text = document.getElementById('topbar-conn-text');
+      if (isGatewayConfigured && pollOk) {
+        badge.className = 'connection-status-pill status-connected';
+        text.innerText = 'Connected';
+      } else if (isGatewayConfigured && !pollOk) {
+        badge.className = 'connection-status-pill status-warning';
+        text.innerText = 'Poll Issue';
+      } else {
+        badge.className = 'connection-status-pill status-disconnected';
+        text.innerText = 'Disconnected';
+      }
+
+      const banner = document.getElementById('setup-incomplete-banner');
+      const msg = document.getElementById('setup-banner-msg');
+      banner.hidden = isGatewayConfigured;
+      if (!isGatewayConfigured) {
+        msg.innerText = lastError
+          ? `Connection issue (${lastError}): reconnect your UPI ID and Gmail.`
+          : 'Setup incomplete: connect your UPI ID and Gmail to start accepting payments.';
+      }
+
+      ['btn-topbar-create-link', 'btn-create-link', 'btn-empty-create-link', 'btn-create-key', 'btn-empty-create-key'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('is-disabled', !isGatewayConfigured);
+      });
+      const linksSub = document.getElementById('links-gated-subtext');
+      const keysSub = document.getElementById('keys-gated-subtext');
+      if (linksSub) linksSub.hidden = isGatewayConfigured;
+      if (keysSub) keysSub.hidden = isGatewayConfigured;
+    }
+
+    function requireConfiguredOrRedirect() {
+      if (isGatewayConfigured) return true;
+      showToast('Connect your UPI ID and Gmail first.', 'error');
+      switchTab('connect');
+      return false;
+    }
+
+    function handleTopCreateLink() {
+      if (!requireConfiguredOrRedirect()) return;
+      switchTab('links');
+      openCreateLinkModal();
+    }
+
+    function showConfirmModal(title, message, confirmText = 'Confirm', isDanger = true) {
+      return new Promise((resolve) => {
+        document.getElementById('modal-confirm-title').innerText = title;
+        document.getElementById('modal-confirm-message').innerText = message;
+        const btn = document.getElementById('modal-confirm-btn');
+        btn.innerText = confirmText;
+        btn.className = isDanger ? 'btn btn-danger' : 'btn btn-primary';
+        pendingConfirmResolve = resolve;
+        document.getElementById('modal-confirm').classList.add('active');
+      });
+    }
+    function closeConfirmModal(res) {
+      document.getElementById('modal-confirm').classList.remove('active');
+      if (pendingConfirmResolve) { pendingConfirmResolve(res); pendingConfirmResolve = null; }
+    }
+    function openModal(id) { document.getElementById(id).classList.add('active'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+    function toggleDrawer(force) {
+      const d = document.getElementById('nav-drawer');
+      const o = document.getElementById('drawer-overlay');
+      const open = typeof force === 'boolean' ? force : !d.classList.contains('open');
+      d.classList.toggle('open', open);
+      o.classList.toggle('active', open);
+    }
+
+    function initTheme() {
+      const saved = localStorage.getItem('mupi_theme');
+      const isDark = saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.classList.toggle('dark', isDark);
+    }
+    function toggleTheme() {
+      const isDark = document.documentElement.classList.toggle('dark');
+      localStorage.setItem('mupi_theme', isDark ? 'dark' : 'light');
+      if (paymentsChartInstance) renderChartTheme(paymentsChartInstance);
+    }
+
+    const tabTitles = {
+      dashboard: 'Dashboard', connect: 'Connect', links: 'Payment Links',
+      transactions: 'Transactions', api: 'API', docs: 'Docs', settings: 'Settings'
+    };
+
+    function switchTab(tabId, updateUrl = true) {
+      document.querySelectorAll('#app .view').forEach(el => { el.hidden = true; });
+      document.querySelectorAll('#app .nav-link').forEach(el => el.classList.remove('active'));
+      const target = document.getElementById(`tab-${tabId}`);
+      if (target) target.hidden = false;
+      const link = document.querySelector(`#app .nav-link[data-tab="${tabId}"]`);
+      if (link) link.classList.add('active');
+      document.getElementById('topbar-page-name').innerText = tabTitles[tabId] || 'Dashboard';
+      toggleDrawer(false);
+
+      if (updateUrl) {
+        const nextUrl = tabId === 'docs' ? '/docs' : '/dashboard';
+        if (window.location.pathname !== nextUrl) window.history.replaceState({}, '', nextUrl);
+      }
+
+      if (tabId === 'dashboard') { loadDashboard(); loadConnection(); }
+      else if (tabId === 'connect') loadConnection();
+      else if (tabId === 'links') loadPaymentLinks();
+      else if (tabId === 'transactions') { loadTransactions(); loadVerifyLogs(); loadUnmatched(); }
+      else if (tabId === 'api') { loadApiKeys(); loadWebhookSecret(); loadWebhookLogs(); }
+      else if (tabId === 'docs') loadDocsPrompt();
+      else if (tabId === 'settings') loadSettingsProfile();
+    }
+
+    /* ========================================================================
+       EXPIRY CELLS
+       ======================================================================== */
+    function formatExpiryCell(order) {
+      if (!order.expires_at) return '—';
+      if (order.status === 'pending') {
+        const expMs = Date.parse(order.expires_at);
+        const nowMs = Date.now() + serverOffsetMs;
+        const secs = Math.max(0, Math.floor((expMs - nowMs) / 1000));
+        return `<span class="pending-expiry-timer" data-exp="${escapeHtml(order.expires_at)}" style="font-family:var(--font-mono);font-size:12px;color:var(--primary);font-weight:700;">${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} left</span>`;
+      }
+      return `<span style="font-size:12px;color:var(--text-muted);">${new Date(order.expires_at).toLocaleString()}</span>`;
+    }
+    function updatePendingExpiryCountdowns() {
+      const nowMs = Date.now() + serverOffsetMs;
+      document.querySelectorAll('.pending-expiry-timer').forEach(el => {
+        const expMs = Date.parse(el.dataset.exp || '');
+        if (Number.isNaN(expMs)) return;
+        const secs = Math.max(0, Math.floor((expMs - nowMs) / 1000));
+        if (secs === 0) {
+          el.innerText = '0:00 (expiring)';
+          el.style.color = 'var(--danger)';
+        } else {
+          el.innerText = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} left`;
+        }
+      });
+    }
+
+    /* ========================================================================
+       1. DASHBOARD OVERVIEW
+       ======================================================================== */
+    async function loadDashboard() {
+      try {
+        const { data } = await api('/api/admin/stats');
+        if (!data.success) return;
+        const s = data.stats;
+        document.getElementById('stat-total-received').innerText = Number(s.total_received || 0).toFixed(2);
+        document.getElementById('stat-paid-count').innerText = s.paid || 0;
+        document.getElementById('stat-today-amount').innerText = Number(s.today_amount || 0).toFixed(2);
+        document.getElementById('stat-today-count').innerText = s.today_count || 0;
+        document.getElementById('stat-pending-count').innerText = s.pending || 0;
+        document.getElementById('stat-total-orders').innerText = s.total_payments || 0;
+        document.getElementById('stat-expired-count').innerText = s.expired || 0;
+        document.getElementById('stat-cancelled-count').innerText = s.cancelled || 0;
+        document.getElementById('stat-failed-count').innerText = s.failed || 0;
+        renderChart(data.time_series || []);
+        renderRecentTransactions(data.recent_transactions || []);
+      } catch (e) {}
+    }
+
+    function renderChart(timeSeries) {
+      const ctx = document.getElementById('paymentsChart');
+      const wrap = document.getElementById('chart-canvas-wrap');
+      const empty = document.getElementById('chart-empty-container');
+      const amounts = timeSeries.map(i => i.amount);
+      const hasData = amounts.some(a => a > 0);
+      if (!hasData || !window.Chart) {
+        empty.hidden = false;
+        wrap.hidden = true;
+        if (paymentsChartInstance) { paymentsChartInstance.destroy(); paymentsChartInstance = null; }
+        return;
+      }
+      empty.hidden = true;
+      wrap.hidden = false;
+      const isDark = document.documentElement.classList.contains('dark');
+      if (paymentsChartInstance) paymentsChartInstance.destroy();
+      paymentsChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: timeSeries.map(i => i.date.slice(5)),
+          datasets: [{
+            label: 'Daily Revenue (₹)',
+            data: amounts,
+            borderColor: '#1644b8',
+            backgroundColor: 'rgba(22, 68, 184, 0.08)',
+            borderWidth: 2.5,
+            fill: true,
+            tension: 0.35,
+            pointRadius: 3
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ₹${Number(c.raw).toFixed(2)}` } } },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: isDark ? '#64748b' : '#94a3b8', font: { size: 11 } } },
+            y: { beginAtZero: true, grid: { color: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }, ticks: { color: isDark ? '#64748b' : '#94a3b8', callback: v => '₹' + v, font: { size: 11 } } }
+          }
+        }
+      });
+    }
+    function renderChartTheme(chart) {
+      const isDark = document.documentElement.classList.contains('dark');
+      chart.options.scales.x.ticks.color = isDark ? '#64748b' : '#94a3b8';
+      chart.options.scales.y.ticks.color = isDark ? '#64748b' : '#94a3b8';
+      chart.options.scales.y.grid.color = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+      chart.update();
+    }
+
+    function renderRecentTransactions(txns) {
+      const tbody = document.getElementById('recent-transactions-tbody');
+      const empty = document.getElementById('recent-empty-state');
+      tbody.innerHTML = '';
+      empty.hidden = txns.length > 0;
+      txns.forEach(t => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td data-label="Order ID" style="font-family:var(--font-mono);font-weight:700;"><a href="/pay/${escapeHtml(t.id)}">${escapeHtml(t.id)}</a></td>
+          <td data-label="Amount" style="font-family:var(--font-mono);font-weight:700;">₹${Number(t.payable_amount).toFixed(2)}</td>
+          <td data-label="Status"><span class="badge badge-${escapeHtml(t.status)}">${escapeHtml(t.status)}</span></td>
+          <td data-label="UTR" style="font-family:var(--font-mono);font-size:12px;">${escapeHtml(t.utr || '—')}</td>
+          <td data-label="Created" style="font-size:12px;color:var(--text-muted);">${new Date(t.created_at).toLocaleString()}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    /* ========================================================================
+       2. CONNECT & TEST VERIFICATION
+       ======================================================================== */
+    async function loadConnection() {
+      try {
+        const { data } = await api('/api/admin/connection');
+        const isConn = Boolean(data.connected);
+        const pollOk = data.last_poll_ok !== false;
+        updateConfigurationGateUI(isConn, pollOk, isConn ? null : data.last_error);
+
+        if (data.upi_id) document.getElementById('conn-upi-id').value = data.upi_id;
+        if (data.gmail) document.getElementById('conn-gmail').value = data.gmail;
+
+        const pwd = document.getElementById('conn-app-password');
+        if (data.has_password) { pwd.placeholder = '•••••••••••••••• (Leave blank to keep saved)'; pwd.required = false; }
+        else { pwd.placeholder = '16-character Google App Password'; pwd.required = true; }
+
+        const card = document.getElementById('conn-status-card');
+        const badge = document.getElementById('conn-status-badge');
+        const discBtn = document.getElementById('btn-disconnect-conn');
+        const errBox = document.getElementById('conn-last-error');
+        const lastAt = data.last_poll_at || data.last_checked;
+
+        discBtn.hidden = !isConn;
+        card.hidden = !(isConn || data.has_credentials || data.last_error);
+        document.getElementById('conn-last-checked').innerText = `Last poll: ${lastAt ? new Date(lastAt).toLocaleString() : 'Never'} (${pollOk ? 'OK' : 'Error'})`;
+
+        if (isConn && pollOk) { badge.className = 'badge badge-paid'; badge.innerText = 'Poller Active'; }
+        else if (isConn && !pollOk) { badge.className = 'badge badge-cancelled'; badge.innerText = 'Poll Warning'; }
+        else { badge.className = 'badge badge-failed'; badge.innerText = 'Disconnected'; }
+
+        errBox.hidden = !data.last_error;
+        if (data.last_error) errBox.innerText = `Last error: ${data.last_error}`;
+      } catch (e) {}
+    }
+
+    document.getElementById('connect-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-save-conn');
+      btn.disabled = true; btn.innerText = 'Verifying IMAP...';
+      try {
+        const { data } = await api('/api/admin/connection', 'POST', {
+          upi_id: document.getElementById('conn-upi-id').value.trim(),
+          gmail: document.getElementById('conn-gmail').value.trim(),
+          app_password: document.getElementById('conn-app-password').value.trim()
+        });
+        if (data.success) {
+          document.getElementById('conn-app-password').value = '';
+          showToast('FamApp & Gmail verified and connected!', 'success');
+        } else {
+          showToast(data.error?.message || 'Connection failed', 'error');
+        }
+        await loadConnection();
+      } catch (err) {
+        showToast('Error connecting to backend', 'error');
+      } finally {
+        btn.disabled = false; btn.innerText = 'Verify & Save Connection';
+      }
+    });
+
+    async function runTestVerification() {
+      const btn = document.getElementById('btn-test-verification');
+      btn.disabled = true; btn.innerText = 'Scanning Gmail...';
+      try {
+        const { data } = await api('/api/admin/test-verification', 'POST', {});
+        if (!data.success) {
+          showToast(data.error?.message || 'Test failed', 'error');
+          return;
+        }
+        const card = document.getElementById('test-verify-card');
+        const tbody = document.getElementById('test-verify-tbody');
+        const empty = document.getElementById('test-verify-empty');
+        card.hidden = false;
+        document.getElementById('test-verify-summary').innerText = `${data.pending_count} pending order(s)`;
+        tbody.innerHTML = '';
+        const list = data.emails || [];
+        empty.hidden = list.length > 0;
+        list.forEach(item => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td data-label="Folder / UID" style="font-family:var(--font-mono);font-size:12px;">${escapeHtml(item.folder)} #${escapeHtml(item.uid)}</td>
+            <td data-label="Received" style="font-size:12px;color:var(--text-muted);">${item.received_at ? new Date(item.received_at).toLocaleString() : escapeHtml(item.fam_date || '—')}</td>
+            <td data-label="Amount" style="font-family:var(--font-mono);font-weight:700;">${item.parsed_amount ? '₹' + escapeHtml(item.parsed_amount) : '—'}</td>
+            <td data-label="UTR" style="font-family:var(--font-mono);font-size:12px;">${escapeHtml(item.parsed_utr || '—')}</td>
+            <td data-label="Decision"><span class="badge badge-${escapeHtml(item.decision_type || 'unmatched')}">${escapeHtml(item.decision)}</span></td>
+          `;
+          tbody.appendChild(tr);
+        });
+        showToast(`Inspected ${list.length} Fam email(s)`, 'info');
+      } catch (e) {
+        showToast('Diagnostic check failed', 'error');
+      } finally {
+        btn.disabled = false; btn.innerText = 'Test verification';
+      }
+    }
+
+    async function disconnectFamApp() {
+      if (!await showConfirmModal('Disconnect Poller?', 'Automated email verification will pause until reconnected.', 'Disconnect', true)) return;
+      const { data } = await api('/api/admin/connection/disconnect', 'POST', {});
+      if (data.success) { showToast('Disconnected', 'info'); await loadConnection(); }
+    }
+
+    /* ========================================================================
+       3. PAYMENT LINKS
+       ======================================================================== */
+    function openCreateLinkModal() {
+      if (!requireConfiguredOrRedirect()) return;
+      document.getElementById('link-amount').value = '';
+      document.getElementById('link-expiry').value = '10';
+      document.getElementById('link-note').value = '';
+      document.getElementById('link-redirect-url').value = '';
+      openModal('modal-create-link');
+    }
+
+    async function loadPaymentLinks() {
+      const { data } = await api('/api/admin/orders?source=link');
+      if (data.server_now) {
+        const sMs = Date.parse(data.server_now);
+        if (!Number.isNaN(sMs)) serverOffsetMs = sMs - Date.now();
+      }
+      const tbody = document.getElementById('links-table-tbody');
+      const empty = document.getElementById('links-empty-state');
+      tbody.innerHTML = '';
+      const rows = data.orders || [];
+      empty.hidden = rows.length > 0;
+      rows.forEach(o => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td data-label="Order ID" style="font-family:var(--font-mono);font-weight:700;"><a href="/pay/${escapeHtml(o.id)}">${escapeHtml(o.id)}</a></td>
+          <td data-label="Base" style="font-family:var(--font-mono);">₹${Number(o.base_amount).toFixed(2)}</td>
+          <td data-label="Payable" style="font-family:var(--font-mono);font-weight:700;color:var(--primary);">₹${Number(o.payable_amount).toFixed(2)}</td>
+          <td data-label="Status"><span class="badge badge-${escapeHtml(o.status)}">${escapeHtml(o.status)}</span></td>
+          <td data-label="Expiry">${formatExpiryCell(o)}</td>
+          <td data-label="Actions"><div class="table-actions">
+            <button class="btn btn-secondary btn-sm" onclick="copyLink('/pay/${escapeHtml(o.id)}')">Copy</button>
+            <a href="/pay/${escapeHtml(o.id)}" class="btn btn-secondary btn-sm">Open ↗</a>
+            ${o.status === 'pending' ? `<button class="btn btn-danger btn-sm" onclick="cancelOrder('${escapeHtml(o.id)}')">Cancel</button>` : ''}
+            <button class="btn btn-danger btn-sm" onclick="deleteOrder('${escapeHtml(o.id)}')">Delete</button>
+          </div></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function copyLink(path) {
+      navigator.clipboard.writeText(window.location.origin + path);
+      showToast('Checkout link copied!', 'success');
+    }
+
+    document.getElementById('form-create-link').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!requireConfiguredOrRedirect()) { closeModal('modal-create-link'); return; }
+      const amount = document.getElementById('link-amount').value.trim();
+      const expiry_minutes = parseInt(document.getElementById('link-expiry').value, 10) || 10;
+      const note = document.getElementById('link-note').value.trim();
+      const redirect_url = document.getElementById('link-redirect-url').value.trim();
+
+      const btn = document.getElementById('btn-submit-create-link');
+      btn.disabled = true; btn.innerText = 'Generating...';
+      try {
+        const { data } = await api('/api/admin/orders', 'POST', { amount, expiry_minutes, note, redirect_url });
+        if (data.success) {
+          closeModal('modal-create-link');
+          showToast(`Created ₹${data.payable_amount_str}`, 'success');
+          loadPaymentLinks(); loadDashboard();
+          copyLink(`/pay/${data.order_id}`);
+        } else {
+          showToast(data.error?.message || 'Failed to create link', 'error');
+        }
+      } finally {
+        btn.disabled = false; btn.innerText = 'Generate Link';
+      }
+    });
+
+    async function cancelOrder(orderId) {
+      if (!await showConfirmModal('Cancel Order?', `Cancel ${orderId}?`, 'Cancel Order', true)) return;
+      const { data } = await api(`/api/admin/orders/${encodeURIComponent(orderId)}/cancel`, 'POST', {});
+      if (data.success) { showToast('Order cancelled', 'info'); loadPaymentLinks(); loadTransactions(); loadDashboard(); }
+      else showToast(data.error?.message || 'Failed', 'error');
+    }
+    async function deleteOrder(orderId) {
+      if (!await showConfirmModal('Delete Order?', `Permanently delete ${orderId}?`, 'Delete', true)) return;
+      const { data } = await api(`/api/admin/orders/${encodeURIComponent(orderId)}`, 'DELETE');
+      if (data.success) { showToast('Order deleted', 'info'); loadPaymentLinks(); loadTransactions(); loadDashboard(); }
+    }
+
+    /* ========================================================================
+       4. TRANSACTIONS, VERIFICATION LOG & UNMATCHED
+       ======================================================================== */
+    function switchTxSubtab(subtab) {
+      document.querySelectorAll('#app .subtab-btn').forEach(b => b.classList.toggle('active', b.dataset.subtab === subtab));
+      ['orders', 'verify', 'unmatched'].forEach(p => {
+        document.getElementById(`tx-pane-${p}`).hidden = (p !== subtab);
+      });
+      if (subtab === 'orders') loadTransactions();
+      else if (subtab === 'verify') loadVerifyLogs();
+      else if (subtab === 'unmatched') loadUnmatched();
+    }
+
+    async function loadTransactions() {
+      const status = document.getElementById('filter-status').value;
+      const { data } = await api(`/api/admin/orders${status ? `?status=${encodeURIComponent(status)}` : ''}`);
+      if (data.server_now) {
+        const sMs = Date.parse(data.server_now);
+        if (!Number.isNaN(sMs)) serverOffsetMs = sMs - Date.now();
+      }
+      const tbody = document.getElementById('transactions-table-tbody');
+      const empty = document.getElementById('transactions-empty-state');
+      tbody.innerHTML = '';
+      const rows = data.orders || [];
+      empty.hidden = rows.length > 0;
+      rows.forEach(o => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td data-label="Order ID" style="font-family:var(--font-mono);font-weight:700;"><a href="/pay/${escapeHtml(o.id)}">${escapeHtml(o.id)}</a></td>
+          <td data-label="Source" style="font-size:11px;text-transform:uppercase;font-weight:700;color:var(--text-muted);">${escapeHtml(o.source)}</td>
+          <td data-label="Payable" style="font-family:var(--font-mono);font-weight:700;">₹${Number(o.payable_amount).toFixed(2)}</td>
+          <td data-label="Status"><span class="badge badge-${escapeHtml(o.status)}">${escapeHtml(o.status)}</span></td>
+          <td data-label="Expiry">${formatExpiryCell(o)}</td>
+          <td data-label="UTR" style="font-family:var(--font-mono);font-size:12px;">${escapeHtml(o.utr || '—')}</td>
+          <td data-label="Created" style="font-size:12px;color:var(--text-muted);">${new Date(o.created_at).toLocaleString()}</td>
+          <td data-label="Action"><div class="table-actions">
+            <a href="/pay/${escapeHtml(o.id)}" class="btn btn-secondary btn-sm">View</a>
+            ${o.status === 'pending' ? `<button class="btn btn-danger btn-sm" onclick="cancelOrder('${escapeHtml(o.id)}')">Cancel</button>` : ''}
+            <button class="btn btn-danger btn-sm" onclick="deleteOrder('${escapeHtml(o.id)}')">Delete</button>
+          </div></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+    function exportTransactionsCSV() { window.location.href = '/api/admin/orders/export'; }
+
+    async function loadVerifyLogs() {
+      const { data } = await api('/api/admin/verify-logs');
+      const tbody = document.getElementById('verify-logs-tbody');
+      const empty = document.getElementById('verify-logs-empty-state');
+      tbody.innerHTML = '';
+      const rows = data.logs || [];
+      empty.hidden = rows.length > 0;
+      rows.forEach(l => {
+        const amt = (l.parsed_amount !== null && l.parsed_amount !== undefined) ? `₹${Number(l.parsed_amount).toFixed(2)}` : '—';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td data-label="Time" style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);">${new Date(l.created_at).toLocaleString()}</td>
+          <td data-label="Order ID" style="font-family:var(--font-mono);font-weight:700;">${escapeHtml(l.order_id || '—')}</td>
+          <td data-label="UID" style="font-family:var(--font-mono);">${l.email_uid ?? '—'}</td>
+          <td data-label="Amount" style="font-family:var(--font-mono);font-weight:700;">${amt}</td>
+          <td data-label="UTR" style="font-family:var(--font-mono);font-size:12px;">${escapeHtml(l.parsed_utr || '—')}</td>
+          <td data-label="Decision"><span class="badge badge-${escapeHtml(l.decision)}">${escapeHtml(l.decision)}</span></td>
+          <td data-label="Reason" style="font-size:12px;color:var(--text-muted);">${escapeHtml(l.reason)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function loadUnmatched() {
+      const { data } = await api('/api/admin/unmatched');
+      const tbody = document.getElementById('unmatched-table-tbody');
+      const empty = document.getElementById('unmatched-empty-state');
+      tbody.innerHTML = '';
+      const rows = data.unmatched || [];
+      empty.hidden = rows.length > 0;
+      rows.forEach(u => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td data-label="Amount" style="font-family:var(--font-mono);font-weight:700;color:var(--danger);">₹${Number(u.amount).toFixed(2)}</td>
+          <td data-label="Sender">${escapeHtml(u.sender_name || 'UPI Customer')}</td>
+          <td data-label="UTR" style="font-family:var(--font-mono);font-size:12px;">${escapeHtml(u.utr || '—')}</td>
+          <td data-label="Received" style="font-size:12px;color:var(--text-muted);">${new Date(u.received_at).toLocaleString()}</td>
+          <td data-label="Reason" style="font-size:12px;color:var(--danger);">${escapeHtml(u.reason)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    /* ========================================================================
+       5. API KEYS & WEBHOOKS
+       ======================================================================== */
+    function openCreateApiKeyModal() {
+      if (!requireConfiguredOrRedirect()) return;
+      document.getElementById('key-name').value = '';
+      openModal('modal-create-key');
+    }
+    async function loadApiKeys() {
+      const { data } = await api('/api/admin/keys');
+      const tbody = document.getElementById('api-keys-tbody');
+      const empty = document.getElementById('keys-empty-state');
+      tbody.innerHTML = '';
+      const rows = data.keys || [];
+      empty.hidden = rows.length > 0;
+      rows.forEach(k => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td data-label="Name" style="font-weight:700;">${escapeHtml(k.name)}</td>
+          <td data-label="Prefix" style="font-family:var(--font-mono);">${escapeHtml(k.prefix)}</td>
+          <td data-label="Created" style="font-size:12px;color:var(--text-muted);">${new Date(k.created_at).toLocaleDateString()}</td>
+          <td data-label="Status"><span class="badge ${k.revoked ? 'badge-failed' : 'badge-paid'}">${k.revoked ? 'Revoked' : 'Active'}</span></td>
+          <td data-label="Action">${!k.revoked ? `<button class="btn btn-danger btn-sm" onclick="revokeKey(${k.id})">Revoke</button>` : '<span style="color:var(--text-dim);font-size:12px;">Revoked</span>'}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+    document.getElementById('form-create-key').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!requireConfiguredOrRedirect()) { closeModal('modal-create-key'); return; }
+      const { data } = await api('/api/admin/keys', 'POST', { name: document.getElementById('key-name').value.trim() });
+      if (data.success && data.key) {
+        closeModal('modal-create-key');
+        document.getElementById('new-key-display').value = data.key.plain_key;
+        openModal('modal-show-key');
+        loadApiKeys();
+      } else showToast(data.error?.message || 'Failed', 'error');
+    });
+    function copyNewKey() { navigator.clipboard.writeText(document.getElementById('new-key-display').value); showToast('API Key copied!', 'success'); }
+    async function revokeKey(id) {
+      if (!await showConfirmModal('Revoke API Key?', 'Integrations using this key will stop working.', 'Revoke', true)) return;
+      const { data } = await api(`/api/admin/keys/${id}/revoke`, 'POST', {});
+      if (data.success) { showToast('API Key revoked', 'info'); loadApiKeys(); }
+    }
+    async function loadWebhookSecret() {
+      const { data } = await api('/api/admin/webhook-secret');
+      if (data.success) document.getElementById('webhook-secret-display').value = data.webhook_secret;
+    }
+    function copyWebhookSecret() { navigator.clipboard.writeText(document.getElementById('webhook-secret-display').value); showToast('Webhook secret copied!', 'success'); }
+    async function confirmRegenerateWebhookSecret() {
+      if (!await showConfirmModal('Regenerate Secret?', 'Existing webhook consumers must update the new secret.', 'Regenerate', true)) return;
+      const { data } = await api('/api/admin/webhook-secret/regenerate', 'POST', {});
+      if (data.success) { document.getElementById('webhook-secret-display').value = data.webhook_secret; showToast('Secret regenerated', 'success'); }
+    }
+    async function loadWebhookLogs() {
+      const { data } = await api('/api/admin/webhook-logs');
+      const tbody = document.getElementById('webhook-logs-tbody');
+      const empty = document.getElementById('webhooks-empty-state');
+      tbody.innerHTML = '';
+      const rows = data.logs || [];
+      empty.hidden = rows.length > 0;
+      rows.forEach(l => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td data-label="Order ID" style="font-family:var(--font-mono);font-weight:700;">${escapeHtml(l.order_id)}</td>
+          <td data-label="Target URL" style="font-family:var(--font-mono);font-size:12px;">${escapeHtml(l.url)}</td>
+          <td data-label="Attempt">${escapeHtml(l.attempt)}</td>
+          <td data-label="Code" style="font-family:var(--font-mono);">${l.response_code || '—'}</td>
+          <td data-label="Status"><span class="badge ${l.success ? 'badge-paid' : 'badge-failed'}">${l.success ? 'Delivered' : 'Failed'}</span></td>
+          <td data-label="Sent At" style="font-size:12px;color:var(--text-muted);">${new Date(l.created_at).toLocaleTimeString()}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    /* ========================================================================
+       6. DOCS & AI PROMPT
+       ======================================================================== */
+    function copySnippet(btn) {
+      navigator.clipboard.writeText(btn.nextElementSibling.innerText);
+      btn.innerText = 'Copied!';
+      setTimeout(() => { btn.innerText = 'Copy'; }, 1800);
+    }
+    function jumpToDocSection(id) {
+      if (!id) return;
+      const el = document.getElementById(id);
+      if (el) { el.open = true; el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    }
+    function toggleAllDocSections(open) {
+      document.querySelectorAll('#tab-docs details.doc-section').forEach(d => { d.open = Boolean(open); });
+    }
+    async function loadDocsPrompt() {
+      const stack = document.getElementById('docs-prompt-stack').value;
+      const k = document.getElementById('docs-prompt-inc-key').checked ? '1' : '0';
+      const s = document.getElementById('docs-prompt-inc-sec').checked ? '1' : '0';
+      const url = `/ai-prompt.txt?stack=${encodeURIComponent(stack)}&include_key=${k}&include_secret=${s}`;
+      const res = await fetch(url, { credentials: 'same-origin' });
+      document.getElementById('docs-prompt-preview').innerText = await res.text();
+      document.getElementById('docs-btn-download-prompt').href = url;
+    }
+    document.getElementById('docs-prompt-stack').addEventListener('change', loadDocsPrompt);
+    document.getElementById('docs-prompt-inc-key').addEventListener('change', loadDocsPrompt);
+    document.getElementById('docs-prompt-inc-sec').addEventListener('change', loadDocsPrompt);
+    document.getElementById('docs-btn-copy-prompt').addEventListener('click', () => {
+      navigator.clipboard.writeText(document.getElementById('docs-prompt-preview').innerText);
+      showToast('AI Integration Prompt copied!', 'success');
+    });
+
+    /* ========================================================================
+       7. SETTINGS & LOGOUT
+       ======================================================================== */
+    async function loadSettingsProfile() {
+      const { data } = await api('/api/me');
+      if (data.logged_in && data.admin) {
+        document.getElementById('settings-name').value = data.admin.name || '';
+        document.getElementById('settings-email').value = data.admin.email || '';
+      }
+    }
+    document.getElementById('settings-profile-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const np = document.getElementById('settings-new-password').value;
+      const cp = document.getElementById('settings-confirm-password').value;
+      if (np && np !== cp) { showToast('New passwords do not match', 'error'); return; }
+      const payload = {
+        name: document.getElementById('settings-name').value.trim(),
+        email: document.getElementById('settings-email').value.trim()
+      };
+      if (np) { payload.current_password = document.getElementById('settings-current-password').value; payload.new_password = np; }
+      const { data } = await api('/api/admin/profile', 'POST', payload);
+      if (data.success) {
+        showToast('Profile updated!', 'success');
+        document.getElementById('settings-current-password').value = '';
+        document.getElementById('settings-new-password').value = '';
+        document.getElementById('settings-confirm-password').value = '';
+      } else showToast(data.error?.message || 'Update failed', 'error');
+    });
+
+    async function confirmLogout() {
+      if (!await showConfirmModal('Sign Out of MinorUPI?', 'You will need administrator credentials to sign back in.', 'Sign Out', false)) return;
+      toggleDrawer(false);
+      const { data } = await api('/api/logout', 'POST', {});
+      if (data?.csrf_token) csrfToken = data.csrf_token;
+      window.history.replaceState({}, '', '/login');
+      showTopScreen('login');
+      await fetchCsrfToken(true);
+      showToast('Signed out', 'info');
+    }
+
+    window.addEventListener('DOMContentLoaded', bootstrapSession);
   </script>
 </body>
 </html>

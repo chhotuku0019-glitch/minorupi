@@ -2,18 +2,18 @@
 """
 MinorUPI — Private Personal UPI Payment Gateway
 A self-hosted, single-admin UPI payment gateway with automated FamApp email
-verification, unique-amount paise offset, order lifecycle management, webhooks,
-and AI integration prompt generator.
+verification, exact amount allocation with conflict protection, order lifecycle
+management, webhooks, diagnostics, and AI integration prompt generator.
 """
 
 import os
-import sys
 import re
 import time
 import hmac
 import hashlib
 import secrets
 import sqlite3
+import socket
 import threading
 import imaplib
 import email
@@ -28,8 +28,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
 
 from flask import (
-    Flask, request, jsonify, session, redirect, send_file,
-    Response, make_response
+    Flask, request, jsonify, session, redirect, send_file, make_response, Response
 )
 from flask.sessions import SecureCookieSessionInterface
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -40,31 +39,39 @@ import qrcode
 from qrcode.constants import ERROR_CORRECT_M
 
 # ==============================================================================
-# CONFIGURATION CONSTANTS (Plain constants at top of file)
+# CONFIGURATION CONSTANTS
 # ==============================================================================
 PORT = int(os.environ.get("PORT", 3000))
 HOST = "0.0.0.0"
 BASE_URL = os.environ.get("APP_URL", "").rstrip("/")
-DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gateway.db")
-ALLOWED_EMAIL_DOMAINS = ["famapp.in"]
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_FILE = os.path.join(BASE_DIR, "gateway.db")
+
+ALLOWED_EMAIL_DOMAINS = ["famapp.in", "fam.community"]
+AMOUNT_CONFLICT_MODE = "offset"  # "offset" (+0.01..+0.20 on simultaneous pending conflict) or "reject" (HTTP 409 AMOUNT_BUSY)
+MAX_PAISE_OFFSET = 20
+
 API_DEFAULT_EXPIRY_MINUTES = 5
 WORKER_POLL_INTERVAL_SECONDS = 5
 CHECKOUT_POLL_INTERVAL_SECONDS = 3
-MAX_PAISE_OFFSET = 100
 MAX_LOGIN_ATTEMPTS = 5
 LOGIN_LOCKOUT_SECONDS = 60
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 IST_TZ = timezone(timedelta(hours=5, minutes=30))
+
+# ==============================================================================
+# CUSTOM EXCEPTIONS
+# ==============================================================================
+class AmountConflictError(ValueError):
+    pass
 
 # ==============================================================================
 # FLASK APPLICATION & IN-MEMORY RATE LIMITERS
 # ==============================================================================
 app = Flask(__name__)
-# Add ProxyFix so HTTPS and client IP behind proxy (Cloud Run, Render, nginx) are properly recognized
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = False  # Overridden dynamically per-request below
+app.config["SESSION_COOKIE_SECURE"] = False
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 class DynamicCookieSessionInterface(SecureCookieSessionInterface):
@@ -72,214 +79,37 @@ class DynamicCookieSessionInterface(SecureCookieSessionInterface):
         fwd_proto = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip().lower()
         return bool(request.is_secure or fwd_proto == "https")
 
-    def get_cookie_secure(self, app):
+    def get_cookie_secure(self, flask_app):
         return self._is_https_request()
 
-    def get_cookie_samesite(self, app):
+    def get_cookie_samesite(self, flask_app):
         if self._is_https_request():
             return "None"
         return "Lax"
 
 app.session_interface = DynamicCookieSessionInterface()
 
-# In-memory tracking for brute-force login protection and API rate limits
-login_failed_attempts = defaultdict(list)  # ip -> [timestamps]
-api_rate_tracking = defaultdict(list)      # api_key_hash -> [timestamps]
+login_failed_attempts = defaultdict(list)
+api_rate_tracking = defaultdict(list)
 db_lock = threading.Lock()
+_worker_lock = threading.Lock()
 
-# Global encryption & webhook secrets (loaded from DB settings table)
 FERNET_KEY = None
 WEBHOOK_SECRET = None
 _fernet_instance = None
 _worker_started = False
 
 # ==============================================================================
-# DATABASE MANAGEMENT (SQLite)
+# DECIMAL & TIME HELPERS
 # ==============================================================================
-def get_db():
-    conn = sqlite3.connect(DB_FILE, timeout=10.0, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA busy_timeout=5000;")
-    return conn
+def to_decimal_amount(value) -> Decimal:
+    dec = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return dec
 
-def init_db():
-    global FERNET_KEY, WEBHOOK_SECRET, _fernet_instance
-    with get_db() as db:
-        # Settings table for auto-generated secrets
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );
-        """)
+def format_amount_str(value) -> str:
+    return f"{to_decimal_amount(value):.2f}"
 
-        # Admin table (Single admin, no public signups)
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS admin (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-        """)
-
-        # Connection table (UPI ID + Encrypted Google App Password)
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS connection (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                upi_id TEXT NOT NULL,
-                gmail TEXT NOT NULL,
-                encrypted_app_password TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'disconnected',
-                last_checked TEXT,
-                last_error TEXT
-            );
-        """)
-
-        # Orders table
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS orders (
-                id TEXT PRIMARY KEY,
-                source TEXT NOT NULL, -- 'api' or 'link'
-                base_amount REAL NOT NULL,
-                payable_amount REAL NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending', -- pending, paid, expired, cancelled, failed
-                fail_reason TEXT,
-                utr TEXT UNIQUE,
-                txn_id TEXT,
-                baseline_uid INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL,
-                paid_at TEXT,
-                callback_url TEXT,
-                redirect_url TEXT,
-                note TEXT
-            );
-        """)
-
-        # API Keys table (Store SHA-256 hash, display key only once)
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS api_keys (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                key_hash TEXT UNIQUE NOT NULL,
-                prefix TEXT NOT NULL,
-                name TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                revoked INTEGER DEFAULT 0
-            );
-        """)
-
-        # Processed emails (Idempotency check so one email never verifies twice)
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS processed_emails (
-                message_id TEXT PRIMARY KEY,
-                uid INTEGER,
-                sender TEXT,
-                subject TEXT,
-                received_at TEXT,
-                matched_order_id TEXT,
-                amount REAL,
-                utr TEXT
-            );
-        """)
-
-        # Verification audit logs
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS verify_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT NOT NULL,
-                order_id TEXT,
-                email_uid INTEGER,
-                message_id TEXT,
-                parsed_amount REAL,
-                parsed_utr TEXT,
-                decision TEXT NOT NULL,
-                reason TEXT NOT NULL
-            );
-        """)
-
-        # Safe schema migrations for existing SQLite databases
-        order_cols = {row["name"] for row in db.execute("PRAGMA table_info(orders)").fetchall()}
-        if "baseline_uid" not in order_cols:
-            db.execute("ALTER TABLE orders ADD COLUMN baseline_uid INTEGER NOT NULL DEFAULT 0;")
-
-        proc_cols = {row["name"] for row in db.execute("PRAGMA table_info(processed_emails)").fetchall()}
-        if "uid" not in proc_cols:
-            db.execute("ALTER TABLE processed_emails ADD COLUMN uid INTEGER;")
-
-        # Webhook logs
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS webhook_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_id TEXT NOT NULL,
-                url TEXT NOT NULL,
-                payload TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                attempt INTEGER DEFAULT 1,
-                response_code INTEGER,
-                response_body TEXT,
-                success INTEGER DEFAULT 0,
-                created_at TEXT NOT NULL
-            );
-        """)
-
-        # Unmatched payments
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS unmatched_payments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                amount REAL NOT NULL,
-                sender_name TEXT,
-                utr TEXT UNIQUE,
-                txn_id TEXT,
-                email_date TEXT,
-                message_id TEXT,
-                raw_snippet TEXT,
-                reason TEXT NOT NULL,
-                received_at TEXT NOT NULL
-            );
-        """)
-        db.commit()
-
-        # Initialize or load secrets atomically (never regenerated on restart/workers)
-        with db_lock:
-            cur = db.cursor()
-            cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('SECRET_KEY', ?)", (secrets.token_hex(32),))
-            cur.execute("SELECT value FROM settings WHERE key = 'SECRET_KEY'")
-            app.secret_key = cur.fetchone()["value"]
-
-            cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('FERNET_KEY', ?)", (Fernet.generate_key().decode(),))
-            cur.execute("SELECT value FROM settings WHERE key = 'FERNET_KEY'")
-            FERNET_KEY = cur.fetchone()["value"]
-            _fernet_instance = Fernet(FERNET_KEY.encode())
-
-            cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('WEBHOOK_SECRET', ?)", (secrets.token_hex(24),))
-            cur.execute("SELECT value FROM settings WHERE key = 'WEBHOOK_SECRET'")
-            WEBHOOK_SECRET = cur.fetchone()["value"]
-            db.commit()
-
-def encrypt_secret(plain_text: str) -> str:
-    global _fernet_instance
-    if not plain_text:
-        return ""
-    return _fernet_instance.encrypt(plain_text.encode()).decode()
-
-def decrypt_secret(cipher_text: str) -> str:
-    global _fernet_instance
-    if not cipher_text:
-        return ""
-    try:
-        return _fernet_instance.decrypt(cipher_text.encode()).decode()
-    except Exception:
-        return ""
-
-def get_base_url():
-    if BASE_URL:
-        return BASE_URL
-    return request.host_url.rstrip("/")
-
-def iso_now():
+def iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 def parse_iso_utc(iso_str: str):
@@ -293,15 +123,14 @@ def parse_iso_utc(iso_str: str):
     except Exception:
         return None
 
-def parse_imap_internaldate_utc(meta_bytes: bytes, msg_obj=None):
-    """Extracts IMAP INTERNALDATE and converts to timezone-aware UTC datetime."""
+def parse_imap_internaldate_utc(meta_bytes, msg_obj=None):
+    """Parses IMAP INTERNALDATE cleanly into a timezone-aware UTC datetime."""
     if meta_bytes:
         try:
             meta_str = meta_bytes.decode("utf-8", errors="replace") if isinstance(meta_bytes, (bytes, bytearray)) else str(meta_bytes)
             m = re.search(r'INTERNALDATE\s+"([^"]+)"', meta_str)
             if m:
                 raw_date = m.group(1).strip()
-                # Example: 18-Nov-2026 07:45:12 +0000
                 dt = datetime.strptime(raw_date, "%d-%b-%Y %H:%M:%S %z")
                 return dt.astimezone(timezone.utc)
         except Exception:
@@ -319,14 +148,10 @@ def parse_imap_internaldate_utc(meta_bytes: bytes, msg_obj=None):
     return None
 
 def parse_fam_ist_date_utc(date_str: str):
-    """
-    Parses FamApp 'Date :' line (e.g. '04:22 PM IST, 02 November 2026')
-    as IST (UTC+5:30) and converts to timezone-aware UTC datetime.
-    """
+    """Parses FamApp body Date line (IST UTC+5:30) as timezone-aware UTC datetime."""
     if not date_str:
         return None
     cleaned = re.sub(r"\s+", " ", date_str).strip()
-    # Try ISO directly if already ISO
     iso_dt = parse_iso_utc(cleaned)
     if iso_dt is not None:
         return iso_dt
@@ -356,56 +181,299 @@ def parse_fam_ist_date_utc(date_str: str):
     for fmt in formats:
         try:
             naive_dt = datetime.strptime(cleaned_no_ist, fmt)
-            ist_dt = naive_dt.replace(tzinfo=IST_TZ)
-            return ist_dt.astimezone(timezone.utc)
+            return naive_dt.replace(tzinfo=IST_TZ).astimezone(timezone.utc)
         except Exception:
             continue
     return None
 
-def get_current_inbox_max_uid(gmail: str, app_password: str) -> int:
-    """Connects to IMAP once and returns highest current UID in INBOX (0 if empty)."""
+# ==============================================================================
+# DATABASE MANAGEMENT (SQLite)
+# ==============================================================================
+def get_db():
+    conn = sqlite3.connect(DB_FILE, timeout=15.0, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=5000;")
+    return conn
+
+def init_db():
+    global FERNET_KEY, WEBHOOK_SECRET, _fernet_instance
+    with get_db() as db:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+        """)
+
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS admin (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+        """)
+
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS connection (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                upi_id TEXT NOT NULL,
+                gmail TEXT NOT NULL,
+                encrypted_app_password TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'disconnected',
+                last_checked TEXT,
+                last_error TEXT,
+                last_poll_at TEXT,
+                last_poll_ok INTEGER DEFAULT 1
+            );
+        """)
+
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS orders (
+                id TEXT PRIMARY KEY,
+                source TEXT NOT NULL,
+                base_amount REAL NOT NULL,
+                payable_amount REAL NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                fail_reason TEXT,
+                utr TEXT UNIQUE,
+                txn_id TEXT,
+                baseline_uid INTEGER,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                paid_at TEXT,
+                callback_url TEXT,
+                redirect_url TEXT,
+                note TEXT
+            );
+        """)
+
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS api_keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key_hash TEXT UNIQUE NOT NULL,
+                prefix TEXT NOT NULL,
+                name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                revoked INTEGER DEFAULT 0
+            );
+        """)
+
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS processed_emails (
+                message_id TEXT PRIMARY KEY,
+                uid INTEGER,
+                sender TEXT,
+                subject TEXT,
+                received_at TEXT,
+                matched_order_id TEXT,
+                amount REAL,
+                utr TEXT
+            );
+        """)
+
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS verify_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                order_id TEXT,
+                email_uid INTEGER,
+                message_id TEXT,
+                parsed_amount REAL,
+                parsed_utr TEXT,
+                decision TEXT NOT NULL,
+                reason TEXT NOT NULL
+            );
+        """)
+
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS webhook_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id TEXT NOT NULL,
+                url TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                attempt INTEGER DEFAULT 1,
+                response_code INTEGER,
+                response_body TEXT,
+                success INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+        """)
+
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS unmatched_payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                amount REAL NOT NULL,
+                sender_name TEXT,
+                utr TEXT UNIQUE,
+                txn_id TEXT,
+                email_date TEXT,
+                message_id TEXT,
+                raw_snippet TEXT,
+                reason TEXT NOT NULL,
+                received_at TEXT NOT NULL
+            );
+        """)
+
+        # Idempotent migrations for pre-existing DBs
+        conn_cols = {row["name"] for row in db.execute("PRAGMA table_info(connection)").fetchall()}
+        if "last_poll_at" not in conn_cols:
+            db.execute("ALTER TABLE connection ADD COLUMN last_poll_at TEXT;")
+        if "last_poll_ok" not in conn_cols:
+            db.execute("ALTER TABLE connection ADD COLUMN last_poll_ok INTEGER DEFAULT 1;")
+
+        order_info = db.execute("PRAGMA table_info(orders)").fetchall()
+        order_cols = {row["name"] for row in order_info}
+        if "baseline_uid" not in order_cols:
+            db.execute("ALTER TABLE orders ADD COLUMN baseline_uid INTEGER;")
+        elif any(row["name"] == "baseline_uid" and row["notnull"] for row in order_info):
+            db.execute("""
+                CREATE TABLE orders_migrated (
+                    id TEXT PRIMARY KEY,
+                    source TEXT NOT NULL,
+                    base_amount REAL NOT NULL,
+                    payable_amount REAL NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    fail_reason TEXT,
+                    utr TEXT UNIQUE,
+                    txn_id TEXT,
+                    baseline_uid INTEGER,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    paid_at TEXT,
+                    callback_url TEXT,
+                    redirect_url TEXT,
+                    note TEXT
+                );
+            """)
+            db.execute("""
+                INSERT INTO orders_migrated (id, source, base_amount, payable_amount, status, fail_reason, utr, txn_id, baseline_uid, created_at, expires_at, paid_at, callback_url, redirect_url, note)
+                SELECT id, source, base_amount, payable_amount, status, fail_reason, utr, txn_id, baseline_uid, created_at, expires_at, paid_at, callback_url, redirect_url, note FROM orders;
+            """)
+            db.execute("DROP TABLE orders;")
+            db.execute("ALTER TABLE orders_migrated RENAME TO orders;")
+
+        proc_cols = {row["name"] for row in db.execute("PRAGMA table_info(processed_emails)").fetchall()}
+        if "uid" not in proc_cols:
+            db.execute("ALTER TABLE processed_emails ADD COLUMN uid INTEGER;")
+
+        db.commit()
+
+        with db_lock:
+            cur = db.cursor()
+            cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('SECRET_KEY', ?)", (secrets.token_hex(32),))
+            cur.execute("SELECT value FROM settings WHERE key = 'SECRET_KEY'")
+            app.secret_key = cur.fetchone()["value"]
+
+            cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('FERNET_KEY', ?)", (Fernet.generate_key().decode(),))
+            cur.execute("SELECT value FROM settings WHERE key = 'FERNET_KEY'")
+            FERNET_KEY = cur.fetchone()["value"]
+            _fernet_instance = Fernet(FERNET_KEY.encode())
+
+            cur.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('WEBHOOK_SECRET', ?)", (secrets.token_hex(24),))
+            cur.execute("SELECT value FROM settings WHERE key = 'WEBHOOK_SECRET'")
+            WEBHOOK_SECRET = cur.fetchone()["value"]
+            db.commit()
+
+def encrypt_secret(plain_text: str) -> str:
+    if not plain_text:
+        return ""
+    return _fernet_instance.encrypt(plain_text.encode()).decode()
+
+def decrypt_secret(cipher_text: str) -> str:
+    if not cipher_text:
+        return ""
+    try:
+        return _fernet_instance.decrypt(cipher_text.encode()).decode()
+    except Exception:
+        return ""
+
+def get_base_url():
+    if BASE_URL:
+        return BASE_URL
+    return request.host_url.rstrip("/")
+
+# ==============================================================================
+# IMAP CONNECTION & UIDNEXT BASELINE HELPERS
+# ==============================================================================
+def open_imap_connection(gmail: str, app_password: str, timeout: int = 12):
+    mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=timeout)
+    mail.login(gmail, app_password)
+    return mail
+
+def close_imap_silently(mail):
+    if not mail:
+        return
+    try:
+        mail.close()
+    except Exception:
+        pass
+    try:
+        mail.logout()
+    except Exception:
+        pass
+
+def get_inbox_uidnext(gmail: str, app_password: str):
+    """
+    Reads INBOX UIDNEXT from STATUS INBOX (UIDNEXT) or SELECT response.
+    Returns int UIDNEXT when readable, or None if IMAP failed so order creation
+    falls back cleanly to INTERNALDATE time-based verification.
+    """
     if not gmail or not app_password:
-        return 0
+        return None
     mail = None
     try:
-        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=10)
-        mail.login(gmail, app_password)
-        mail.select("INBOX", readonly=True)
-        status, search_data = mail.uid("SEARCH", None, "ALL")
-        if status == "OK" and search_data and search_data[0]:
-            uids = [int(x) for x in search_data[0].split() if x.isdigit()]
-            return max(uids) if uids else 0
-        return 0
-    except Exception:
-        return 0
-    finally:
-        if mail:
-            try:
-                mail.close()
-            except Exception:
-                pass
-            try:
-                mail.logout()
-            except Exception:
-                pass
+        mail = open_imap_connection(gmail, app_password, timeout=10)
+        # 1. Try STATUS INBOX (UIDNEXT)
+        try:
+            st, data = mail.status("INBOX", "(UIDNEXT)")
+            if st == "OK" and data:
+                for item in data:
+                    text = item.decode("utf-8", errors="replace") if isinstance(item, (bytes, bytearray)) else str(item)
+                    m = re.search(r"UIDNEXT\s+(\d+)", text, re.IGNORECASE)
+                    if m:
+                        val = int(m.group(1))
+                        if val > 0:
+                            return val
+        except Exception:
+            pass
 
-def fetch_connection_baseline_uid() -> int:
+        # 2. Fallback: parse UIDNEXT from SELECT INBOX untagged response
+        st, _ = mail.select("INBOX", readonly=True)
+        if st == "OK" and hasattr(mail, "untagged_responses"):
+            uidnext_list = mail.untagged_responses.get("UIDNEXT") or []
+            for item in uidnext_list:
+                text = item.decode("utf-8", errors="replace") if isinstance(item, (bytes, bytearray)) else str(item)
+                m = re.search(r"(\d+)", text)
+                if m:
+                    val = int(m.group(1))
+                    if val > 0:
+                        return val
+        return None
+    except Exception:
+        return None
+    finally:
+        close_imap_silently(mail)
+
+def fetch_connection_baseline_uid():
     with get_db() as db:
         conn_row = db.execute("SELECT gmail, encrypted_app_password, status FROM connection WHERE id = 1").fetchone()
         if not conn_row or conn_row["status"] != "connected":
-            return 0
+            return None
         gmail = conn_row["gmail"]
         app_pwd = decrypt_secret(conn_row["encrypted_app_password"])
-    return get_current_inbox_max_uid(gmail, app_pwd)
+    return get_inbox_uidnext(gmail, app_pwd)
 
 # ==============================================================================
-# STATELESS SIGNED CSRF & CONFIGURATION HELPERS
+# STATELESS SIGNED CSRF & AUTH RATE LIMIT HELPERS
 # ==============================================================================
 CSRF_SALT = "minorupi-csrf-token-salt"
-CSRF_MAX_AGE_SECONDS = 43200  # 12 hours valid
+CSRF_MAX_AGE_SECONDS = 43200
 
 def get_csrf_serializer():
-    # Use app.secret_key (guaranteed persisted in database settings table)
     key = app.secret_key or "minorupi-fallback-secret-key"
     return URLSafeTimedSerializer(key, salt=CSRF_SALT)
 
@@ -425,7 +493,6 @@ def verify_csrf_token(token: str) -> bool:
         return False
 
 def verify_csrf():
-    # 1. Origin / Referer validation when present (proxy-aware)
     origin = request.headers.get("Origin") or request.headers.get("Referer")
     if origin and origin != "null":
         try:
@@ -459,7 +526,6 @@ def verify_csrf():
         except Exception:
             return False
 
-    # 2. Extract stateless signed token from Header X-CSRF-Token, Form, or JSON body
     token = request.headers.get("X-CSRF-Token")
     if not token and request.form:
         token = request.form.get("csrf_token")
@@ -483,10 +549,6 @@ def csrf_error_response():
     }), 403
 
 def is_gateway_configured() -> bool:
-    """
-    Checks if FamApp UPI ID + Gmail + App Password have been connected
-    and the IMAP verification test succeeded (status == 'connected').
-    """
     with get_db() as db:
         row = db.execute("SELECT upi_id, gmail, encrypted_app_password, status FROM connection WHERE id = 1").fetchone()
         if not row:
@@ -511,49 +573,62 @@ def reset_failed_login(ip_address: str):
         del login_failed_attempts[ip_address]
 
 # ==============================================================================
-# UNIQUE-AMOUNT PAISE OFFSET ALLOCATION (Section 7.1)
+# EXACT DECIMAL AMOUNT ALLOCATION WITH SIMULTANEOUS-CONFLICT HANDLING
 # ==============================================================================
-def allocate_unique_payable_amount(base_amount: float) -> float:
+def allocate_payable_amount_in_db(db, base_dec: Decimal) -> Decimal:
     """
-    Finds the first available paise offset (0.00 to 0.99) for a base amount
-    such that no other pending order has the exact same payable amount.
+    Expires overdue pending orders first, then checks ONLY genuinely active
+    pending orders (status == 'pending' and expires_at > now).
+    Returns exact base_dec unless a live pending order already holds that exact
+    payable amount.
     """
-    base_dec = Decimal(str(base_amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    with get_db() as db:
-        rows = db.execute("SELECT payable_amount FROM orders WHERE status = 'pending'").fetchall()
-        busy_amounts = {round(row["payable_amount"], 2) for row in rows}
+    now_dt = datetime.now(timezone.utc)
+    base_q = base_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-        for offset in range(MAX_PAISE_OFFSET):
-            offset_dec = Decimal(offset) / Decimal(100)
-            candidate = float(base_dec + offset_dec)
-            candidate_rounded = round(candidate, 2)
-            if candidate_rounded not in busy_amounts:
-                return candidate_rounded
+    pending_rows = db.execute("SELECT id, payable_amount, expires_at, callback_url, base_amount, note FROM orders WHERE status = 'pending'").fetchall()
+    busy_amounts = set()
+    for row in pending_rows:
+        exp_dt = parse_iso_utc(row["expires_at"])
+        if exp_dt is not None and exp_dt <= now_dt:
+            db.execute("UPDATE orders SET status = 'expired' WHERE id = ? AND status = 'pending'", (row["id"],))
+            continue
+        busy_amounts.add(to_decimal_amount(row["payable_amount"]))
+    db.commit()
 
-    raise ValueError(f"No unique payable amount slot available for ₹{base_amount:.2f}. All {MAX_PAISE_OFFSET} paise slots are currently pending. Retry shortly.")
+    if base_q not in busy_amounts:
+        return base_q
+
+    if AMOUNT_CONFLICT_MODE == "reject":
+        raise AmountConflictError("Another payment of the same amount is in progress, try again in a moment")
+
+    for offset in range(1, MAX_PAISE_OFFSET + 1):
+        candidate = (base_q + (Decimal(offset) / Decimal("100"))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if candidate not in busy_amounts:
+            return candidate
+
+    raise AmountConflictError("Another payment of the same amount is in progress, try again in a moment")
 
 # ==============================================================================
-# QR CODE & UPI LINK GENERATION (Section 6)
+# QR CODE & UPI LINK GENERATION
 # ==============================================================================
-def generate_upi_payment_data(order_id: str, payable_amount: float):
+def generate_upi_payment_data(order_id: str, payable_amount):
+    amt_dec = to_decimal_amount(payable_amount)
     with get_db() as db:
         conn_row = db.execute("SELECT upi_id FROM connection WHERE id = 1").fetchone()
         admin_row = db.execute("SELECT name FROM admin LIMIT 1").fetchone()
 
     upi_id = conn_row["upi_id"] if conn_row and conn_row["upi_id"] else ""
     merchant_name = admin_row["name"] if admin_row and admin_row["name"] else "MinorUPI Merchant"
-    
-    # Standard UPI URI schema
+
     query = urllib.parse.urlencode({
         "pa": upi_id or "pay@minorupi",
         "pn": merchant_name,
-        "am": f"{payable_amount:.2f}",
+        "am": f"{amt_dec:.2f}",
         "cu": "INR",
         "tn": order_id
     })
     upi_link = f"upi://pay?{query}"
 
-    # Generate QR PNG
     qr = qrcode.QRCode(
         version=1,
         error_correction=ERROR_CORRECT_M,
@@ -563,7 +638,7 @@ def generate_upi_payment_data(order_id: str, payable_amount: float):
     qr.add_data(upi_link)
     qr.make(fit=True)
     img = qr.make_image(fill_color="#0f172a", back_color="#ffffff")
-    
+
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     qr_bytes = buf.getvalue()
@@ -578,7 +653,7 @@ def generate_upi_payment_data(order_id: str, payable_amount: float):
     }
 
 # ==============================================================================
-# EMAIL PARSER REGISTRY (Section 7.2)
+# EMAIL PARSER REGISTRY
 # ==============================================================================
 def clean_html_to_text(html_content: str) -> str:
     text = re.sub(r"<style.*?>.*?</style>", "", html_content, flags=re.DOTALL | re.IGNORECASE)
@@ -588,30 +663,62 @@ def clean_html_to_text(html_content: str) -> str:
     text = re.sub(r"&amp;", "&", text)
     return re.sub(r"\s+", " ", text).strip()
 
+def decode_email_body(msg) -> str:
+    body_text = ""
+    if msg.is_multipart():
+        for part in msg.walk():
+            ctype = part.get_content_type()
+            cdisp = str(part.get("Content-Disposition") or "")
+            if "attachment" in cdisp.lower():
+                continue
+            payload = part.get_payload(decode=True)
+            if not payload:
+                continue
+            text_chunk = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+            if ctype == "text/plain":
+                body_text += "\n" + text_chunk
+            elif ctype == "text/html":
+                body_text += "\n" + clean_html_to_text(text_chunk)
+    else:
+        payload = msg.get_payload(decode=True)
+        if payload:
+            raw_text = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
+            body_text = clean_html_to_text(raw_text) if msg.get_content_type() == "text/html" else raw_text
+    return body_text
+
+def decode_mime_header(raw_val: str) -> str:
+    out = ""
+    for part, enc in decode_header(raw_val or ""):
+        if isinstance(part, bytes):
+            out += part.decode(enc or "utf-8", errors="replace")
+        else:
+            out += str(part)
+    return out
+
+def is_sender_allowed(from_hdr: str, body_text: str) -> bool:
+    parsed_addr = email.utils.parseaddr(from_hdr or "")[1].lower()
+    from_domain = parsed_addr.split("@")[-1].strip() if "@" in parsed_addr else (from_hdr or "").lower()
+    domain_ok = any(d.lower() in from_domain for d in ALLOWED_EMAIL_DOMAINS) or any(d.lower() in (from_hdr or "").lower() for d in ALLOWED_EMAIL_DOMAINS)
+    if domain_ok:
+        return True
+    if re.search(r"successfully\s+received", body_text or "", re.IGNORECASE) and "fam" in (body_text or "").lower():
+        return True
+    return False
+
+def is_auth_header_failed(auth_results: str) -> bool:
+    """Missing Authentication-Results is OK; reject only when spf/dkim fail alongside dmarc=fail."""
+    if not auth_results:
+        return False
+    low = auth_results.lower()
+    has_dmarc_fail = "dmarc=fail" in low
+    has_transport_fail = ("spf=fail" in low) or ("dkim=fail" in low)
+    return has_dmarc_fail and has_transport_fail
+
 def parse_famapp_email(subject: str, body_text: str, headers: dict):
-    """
-    Parses FamApp credit notification emails.
-    Sample:
-    Hey Customer Name,
-    You have successfully received
-    ₹33.0
-    from SENDER NAME
-    Transaction ID :
-    TXN_7819203841
-    Date :
-    04:22 PM IST, 02 November 2026
-    Updated Balance :
-    ₹34.01
-    UTR :
-    006523947230
-    """
-    normalized = body_text.replace("\r", "")
-    
-    # Must contain credit confirmation
-    if "successfully received" not in normalized.lower():
+    normalized = (body_text or "").replace("\r", "")
+    if not re.search(r"successfully\s+received", normalized, re.IGNORECASE):
         return None
 
-    # Amount: number right after 'received', before 'from' (MUST NOT match 'Updated Balance')
     amount_match = re.search(
         r"(?:successfully\s+received|received)[\s\n\r]*[₹Rs\.]*\s*([0-9,]+(?:\.[0-9]{1,2})?)",
         normalized,
@@ -622,29 +729,25 @@ def parse_famapp_email(subject: str, body_text: str, headers: dict):
 
     raw_amount = amount_match.group(1).replace(",", "")
     try:
-        amount = float(Decimal(raw_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+        amt_dec = to_decimal_amount(raw_amount)
     except Exception:
         return None
 
-    # Sender Name
     sender_match = re.search(r"from\s+([A-Za-z0-9\s\.\-_]+?)(?:\n|Transaction ID|\Z)", normalized, re.IGNORECASE)
     sender_name = sender_match.group(1).strip() if sender_match else "UPI Customer"
 
-    # Transaction ID
     txn_match = re.search(r"Transaction ID\s*:\s*([A-Za-z0-9_\-]+)", normalized, re.IGNORECASE)
     txn_id = txn_match.group(1).strip() if txn_match else None
 
-    # UTR (strictly required from email body)
     utr_match = re.search(r"UTR\s*:\s*([A-Za-z0-9_\-]+)", normalized, re.IGNORECASE)
     utr = utr_match.group(1).strip() if utr_match else None
 
-    # Date
     date_match = re.search(r"Date\s*:\s*([^\n\r]+)", normalized, re.IGNORECASE)
     date_str = date_match.group(1).strip() if date_match else None
 
     return {
-        "amount": amount,
-        "amount_dec": str(Decimal(raw_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+        "amount": float(amt_dec),
+        "amount_dec": str(amt_dec),
         "sender_name": sender_name,
         "txn_id": txn_id or f"TXN_{secrets.token_hex(6).upper()}",
         "utr": utr,
@@ -652,13 +755,10 @@ def parse_famapp_email(subject: str, body_text: str, headers: dict):
         "raw_snippet": normalized[:250]
     }
 
-# Registry for multi-provider extension
-EMAIL_PARSER_REGISTRY = [
-    parse_famapp_email
-]
+EMAIL_PARSER_REGISTRY = [parse_famapp_email]
 
 # ==============================================================================
-# WEBHOOK DISPATCHER WITH EXPONENTIAL BACKOFF (Section 8.1)
+# WEBHOOK DISPATCHER WITH EXPONENTIAL BACKOFF
 # ==============================================================================
 def dispatch_webhook_async(order_id: str, status: str, amount: float, base_amount: float, utr: str, txn_id: str, paid_at: str, note: str, callback_url: str):
     if not callback_url:
@@ -668,8 +768,8 @@ def dispatch_webhook_async(order_id: str, status: str, amount: float, base_amoun
         payload_dict = {
             "order_id": order_id,
             "status": status,
-            "amount": amount,
-            "base_amount": base_amount,
+            "amount": float(to_decimal_amount(amount)),
+            "base_amount": float(to_decimal_amount(base_amount)),
             "utr": utr,
             "txn_id": txn_id,
             "paid_at": paid_at,
@@ -679,11 +779,10 @@ def dispatch_webhook_async(order_id: str, status: str, amount: float, base_amoun
         raw_body = json.dumps(payload_dict, separators=(",", ":"))
         signature = hmac.new(WEBHOOK_SECRET.encode("utf-8"), raw_body.encode("utf-8"), hashlib.sha256).hexdigest()
 
-        delays = [0, 2, 6]  # 3 attempts with backoff
+        delays = [0, 2, 6]
         for attempt_idx, delay in enumerate(delays, start=1):
             if delay > 0:
                 time.sleep(delay)
-
             try:
                 req = urllib.request.Request(
                     callback_url,
@@ -691,7 +790,7 @@ def dispatch_webhook_async(order_id: str, status: str, amount: float, base_amoun
                     headers={
                         "Content-Type": "application/json",
                         "X-Signature": signature,
-                        "User-Agent": "Personal-UPI-Gateway-Webhook/1.0"
+                        "User-Agent": "MinorUPI-Webhook/1.0"
                     },
                     method="POST"
                 )
@@ -717,13 +816,20 @@ def dispatch_webhook_async(order_id: str, status: str, amount: float, base_amoun
                     """, (order_id, callback_url, raw_body, signature, attempt_idx, 0, str(e)[:500], 0, iso_now()))
                     db.commit()
 
-    t = threading.Thread(target=_worker, daemon=True)
-    t.start()
+    threading.Thread(target=_worker, daemon=True).start()
 
 # ==============================================================================
-# BACKGROUND IMAP WORKER & EXPIRY SCHEDULER (Strict UID + UTC Verification)
+# VERIFICATION LOGS, EXPIRY SCHEDULER & ROBUST IMAP POLLER
 # ==============================================================================
-def record_verify_log(db, order_id, email_uid, message_id, parsed_amount, parsed_utr, decision, reason):
+def record_verify_log(db, order_id, email_uid, message_id, parsed_amount, parsed_utr, decision, reason, dedup=False):
+    if dedup and message_id:
+        existing = db.execute("""
+            SELECT id FROM verify_logs
+            WHERE message_id = ? AND COALESCE(order_id, '') = COALESCE(?, '') AND decision = ? AND reason = ?
+            ORDER BY id DESC LIMIT 1
+        """, (message_id, order_id, decision, reason)).fetchone()
+        if existing:
+            return
     db.execute("""
         INSERT INTO verify_logs (created_at, order_id, email_uid, message_id, parsed_amount, parsed_utr, decision, reason)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -743,7 +849,6 @@ def record_unmatched_payment(db, amount, sender_name, utr, txn_id, email_date, m
         """, (amount, sender_name, txn_id, email_date, message_id, raw_snippet, reason, now_iso))
 
 def check_order_expiries():
-    """Atomically marks overdue pending orders as expired and fires expired webhook once."""
     now_dt = datetime.now(timezone.utc)
     to_webhook = []
     with db_lock:
@@ -770,341 +875,363 @@ def check_order_expiries():
             callback_url=o["callback_url"]
         )
 
-def poll_gmail_imap():
-    """
-    Connects to Gmail IMAP, fetches ONLY UIDs strictly greater than pending orders'
-    baseline_uid, validates sender/auth, UTC timestamps (INTERNALDATE & Fam Date IST),
-    exact Decimal amount, and unique UTR. Marks at most one order paid per verified email.
-    """
+def _extract_fetch_payload(fetch_data):
+    raw_email = None
+    meta_bytes = b""
+    for item in (fetch_data or []):
+        if isinstance(item, tuple) and len(item) >= 2:
+            if isinstance(item[0], (bytes, bytearray)):
+                meta_bytes += item[0]
+            if isinstance(item[1], (bytes, bytearray)):
+                raw_email = item[1]
+        elif isinstance(item, (bytes, bytearray)):
+            meta_bytes += item
+    return meta_bytes, raw_email
+
+def _search_folder_candidate_uids(mail, folder_name: str, min_uid=None, use_since=False):
+    st, _ = mail.select(folder_name, readonly=True)
+    if st != "OK":
+        return []
+    try:
+        mail.noop()
+    except Exception:
+        pass
+
+    raw_uids = []
+    if min_uid is not None and min_uid > 0 and not use_since:
+        st_s, search_data = mail.uid("SEARCH", None, "UID", f"{min_uid}:*")
+        if st_s == "OK" and search_data and search_data[0]:
+            raw_uids = search_data[0].split()
+        else:
+            since_str = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%d-%b-%Y")
+            st_fb, fb_data = mail.uid("SEARCH", None, "SINCE", since_str)
+            if st_fb == "OK" and fb_data and fb_data[0]:
+                raw_uids = fb_data[0].split()
+        return sorted({int(u) for u in raw_uids if u.isdigit() and int(u) >= min_uid})
+
+    since_str = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%d-%b-%Y")
+    st_s, search_data = mail.uid("SEARCH", None, "SINCE", since_str)
+    if st_s == "OK" and search_data and search_data[0]:
+        raw_uids = search_data[0].split()
+    else:
+        st_all, all_data = mail.uid("SEARCH", None, "ALL")
+        if st_all == "OK" and all_data and all_data[0]:
+            raw_uids = all_data[0].split()[-50:]
+    return sorted({int(u) for u in raw_uids if u.isdigit()})
+
+def _collect_pre_baseline_inbox_msg_ids(mail, pending_orders):
+    """Collects Message-IDs of INBOX messages strictly below each order's baseline_uid so All Mail cannot replay them."""
+    baselines = [int(o["baseline_uid"]) for o in pending_orders if o["baseline_uid"] is not None and int(o["baseline_uid"]) > 1]
+    if not baselines:
+        return {}
+    max_b = max(baselines)
+    min_b = min(baselines)
+    start_uid = max(1, min_b - 30)
+    end_uid = max_b - 1
+    if end_uid < start_uid:
+        return {}
+
+    msg_ids_with_uid = []
+    try:
+        st, _ = mail.select("INBOX", readonly=True)
+        if st != "OK":
+            return {}
+        st_f, f_data = mail.uid("FETCH", f"{start_uid}:{end_uid}", "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])")
+        if st_f == "OK" and f_data:
+            for item in f_data:
+                if isinstance(item, tuple) and len(item) >= 2:
+                    meta_b = item[0].decode("utf-8", errors="replace") if isinstance(item[0], (bytes, bytearray)) else str(item[0])
+                    hdr_b = item[1] if isinstance(item[1], (bytes, bytearray)) else b""
+                    u_m = re.search(r"UID\s+(\d+)", meta_b, re.IGNORECASE)
+                    m_obj = email.message_from_bytes(hdr_b)
+                    mid = (m_obj.get("Message-ID") or "").strip()
+                    if u_m and mid:
+                        msg_ids_with_uid.append((int(u_m.group(1)), mid))
+    except Exception:
+        return {}
+
+    out = {}
+    for o in pending_orders:
+        ob = o["baseline_uid"]
+        if ob is not None and int(ob) > 0:
+            ob_int = int(ob)
+            out[o["id"]] = {mid for uid_val, mid in msg_ids_with_uid if uid_val < ob_int}
+    return out
+
+def _process_imap_folder(mail, folder_name: str, is_inbox: bool, pre_baseline_msg_ids=None):
     with get_db() as db:
         pending_orders = db.execute("SELECT * FROM orders WHERE status = 'pending' ORDER BY created_at ASC").fetchall()
         if not pending_orders:
-            return  # Idle if no pending orders
+            return 0
 
+    if is_inbox:
+        baselines = [o["baseline_uid"] for o in pending_orders]
+        has_missing_baseline = any(b is None or int(b) <= 0 for b in baselines)
+        min_uid = None if has_missing_baseline else min(int(b) for b in baselines)
+        candidate_uids = _search_folder_candidate_uids(mail, folder_name, min_uid=min_uid, use_since=has_missing_baseline)
+    else:
+        # Spam / All Mail have folder-local UIDs, so match strictly by UTC INTERNALDATE window
+        candidate_uids = _search_folder_candidate_uids(mail, folder_name, min_uid=None, use_since=True)
+
+    matched_count = 0
+    for uid in candidate_uids:
+        st, fetch_data = mail.uid("FETCH", str(uid), "(BODY.PEEK[] INTERNALDATE)")
+        if st != "OK" or not fetch_data:
+            continue
+
+        meta_bytes, raw_email = _extract_fetch_payload(fetch_data)
+        if not raw_email:
+            continue
+
+        msg = email.message_from_bytes(raw_email)
+        msg_id = (msg.get("Message-ID") or f"MSG_{hashlib.sha256(raw_email).hexdigest()[:20]}").strip()
+
+        # Skip ONLY if already used to complete a paid order
+        with get_db() as db:
+            already_paid_msg = db.execute(
+                "SELECT 1 FROM processed_emails WHERE message_id = ? AND matched_order_id IS NOT NULL",
+                (msg_id,)
+            ).fetchone()
+            if already_paid_msg:
+                continue
+
+        internaldate_utc = parse_imap_internaldate_utc(meta_bytes, msg)
+        from_hdr = msg.get("From", "")
+        subject = decode_mime_header(msg.get("Subject", ""))
+        body_text = decode_email_body(msg)
+
+        # Quick skip non-Fam emails cleanly
+        if not is_sender_allowed(from_hdr, body_text):
+            continue
+
+        auth_results = msg.get("Authentication-Results", "")
+        if is_auth_header_failed(auth_results):
+            with db_lock:
+                with get_db() as db:
+                    record_verify_log(db, None, uid, msg_id, None, None, "rejected", "sender auth failed (SPF/DKIM+DMARC)", dedup=True)
+                    db.commit()
+            continue
+
+        parsed = None
+        for parser_func in EMAIL_PARSER_REGISTRY:
+            parsed = parser_func(subject, body_text, dict(msg.items()))
+            if parsed:
+                break
+
+        if not parsed:
+            continue
+
+        parsed_amount = parsed["amount"]
+        parsed_amount_dec = Decimal(parsed["amount_dec"]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        parsed_utr = parsed["utr"]
+        parsed_txnid = parsed["txn_id"]
+        parsed_sender = parsed["sender_name"]
+        parsed_date_str = parsed["date_str"]
+        now_iso = iso_now()
+
+        if not parsed_utr:
+            with db_lock:
+                with get_db() as db:
+                    record_verify_log(db, None, uid, msg_id, parsed_amount, None, "rejected", "missing UTR in email", dedup=True)
+                    record_unmatched_payment(db, parsed_amount, parsed_sender, None, parsed_txnid, parsed_date_str or now_iso, msg_id, parsed["raw_snippet"], "Missing UTR in email")
+                    db.commit()
+            continue
+
+        if internaldate_utc is None:
+            with db_lock:
+                with get_db() as db:
+                    record_verify_log(db, None, uid, msg_id, parsed_amount, parsed_utr, "rejected", "missing IMAP INTERNALDATE", dedup=True)
+                    record_unmatched_payment(db, parsed_amount, parsed_sender, parsed_utr, parsed_txnid, parsed_date_str or now_iso, msg_id, parsed["raw_snippet"], "Missing email INTERNALDATE")
+                    db.commit()
+            continue
+
+        webhook_payload = None
+        with db_lock:
+            with get_db() as db:
+                # Duplicate check: skip only if UTR was already used for a paid order
+                paid_with_utr = db.execute("SELECT id FROM orders WHERE utr = ? AND status = 'paid'", (parsed_utr,)).fetchone()
+                proc_with_utr = db.execute("SELECT matched_order_id FROM processed_emails WHERE utr = ? AND matched_order_id IS NOT NULL", (parsed_utr,)).fetchone()
+                if paid_with_utr or proc_with_utr:
+                    existing_oid = paid_with_utr["id"] if paid_with_utr else proc_with_utr["matched_order_id"]
+                    record_verify_log(db, existing_oid, uid, msg_id, parsed_amount, parsed_utr, "rejected", "duplicate UTR", dedup=True)
+                    db.commit()
+                    continue
+
+                current_pending = db.execute("SELECT * FROM orders WHERE status = 'pending' ORDER BY created_at ASC").fetchall()
+                matched_order = None
+                last_reject_order_id = None
+                last_reject_reason = None
+
+                for o in current_pending:
+                    o_amt_dec = to_decimal_amount(o["payable_amount"])
+                    if o_amt_dec != parsed_amount_dec:
+                        continue
+
+                    o_baseline = o["baseline_uid"]
+                    if is_inbox and o_baseline is not None and int(o_baseline) > 0:
+                        if uid < int(o_baseline):
+                            last_reject_order_id = o["id"]
+                            last_reject_reason = "uid < baseline"
+                            continue
+                    if not is_inbox and pre_baseline_msg_ids and msg_id in pre_baseline_msg_ids.get(o["id"], ()):
+                        last_reject_order_id = o["id"]
+                        last_reject_reason = "older than order"
+                        continue
+
+                    o_created_utc = parse_iso_utc(o["created_at"])
+                    o_expires_utc = parse_iso_utc(o["expires_at"])
+                    if o_created_utc is None or o_expires_utc is None:
+                        continue
+
+                    min_allowed = o_created_utc - timedelta(seconds=120)
+                    max_allowed = o_expires_utc + timedelta(seconds=60)
+                    if internaldate_utc < min_allowed:
+                        last_reject_order_id = o["id"]
+                        last_reject_reason = "older than order"
+                        continue
+
+                    if internaldate_utc > max_allowed:
+                        last_reject_order_id = o["id"]
+                        last_reject_reason = "arrived after expiry"
+                        continue
+
+                    matched_order = o
+                    break
+
+                if matched_order:
+                    cur = db.execute("""
+                        UPDATE orders
+                        SET status = 'paid', utr = ?, txn_id = ?, paid_at = ?
+                        WHERE id = ? AND status = 'pending'
+                    """, (parsed_utr, parsed_txnid, now_iso, matched_order["id"]))
+
+                    if cur.rowcount == 1:
+                        db.execute("""
+                            INSERT OR REPLACE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (msg_id, uid, from_hdr, subject[:200], now_iso, matched_order["id"], parsed_amount, parsed_utr))
+                        record_verify_log(db, matched_order["id"], uid, msg_id, parsed_amount, parsed_utr, "matched", f"verified payment ({folder_name})")
+                        db.commit()
+                        matched_count += 1
+                        if matched_order["callback_url"]:
+                            webhook_payload = dict(matched_order)
+                else:
+                    # Do NOT mark processed_emails here so legitimate emails aren't lost; log deduplicated reason
+                    if not last_reject_reason:
+                        recent_exp = db.execute("SELECT * FROM orders WHERE status = 'expired' ORDER BY created_at DESC LIMIT 20").fetchall()
+                        for eo in recent_exp:
+                            if to_decimal_amount(eo["payable_amount"]) == parsed_amount_dec:
+                                eo_cre = parse_iso_utc(eo["created_at"])
+                                eo_exp = parse_iso_utc(eo["expires_at"])
+                                if eo_cre and eo_exp and internaldate_utc >= (eo_cre - timedelta(seconds=120)):
+                                    last_reject_order_id = eo["id"]
+                                    last_reject_reason = "arrived after expiry"
+                                    break
+                    final_reason = last_reject_reason or "no pending order with this amount"
+                    final_decision = "rejected" if last_reject_reason else "unmatched"
+                    record_verify_log(db, last_reject_order_id, uid, msg_id, parsed_amount, parsed_utr, final_decision, final_reason, dedup=True)
+                    if last_reject_reason == "arrived after expiry":
+                        record_unmatched_payment(db, parsed_amount, parsed_sender, parsed_utr, parsed_txnid, parsed_date_str or now_iso, msg_id, parsed["raw_snippet"], "Arrived after order expiry")
+                    db.commit()
+
+        if webhook_payload:
+            dispatch_webhook_async(
+                order_id=webhook_payload["id"],
+                status="paid",
+                amount=webhook_payload["payable_amount"],
+                base_amount=webhook_payload["base_amount"],
+                utr=parsed_utr,
+                txn_id=parsed_txnid,
+                paid_at=now_iso,
+                note=webhook_payload["note"],
+                callback_url=webhook_payload["callback_url"]
+            )
+
+    return matched_count
+
+def poll_gmail_imap():
+    with get_db() as db:
+        pending_count = db.execute("SELECT COUNT(*) as c FROM orders WHERE status = 'pending'").fetchone()["c"]
+        if pending_count == 0:
+            return
         conn_row = db.execute("SELECT * FROM connection WHERE id = 1").fetchone()
         if not conn_row or conn_row["status"] != "connected":
             return
-
         gmail = conn_row["gmail"]
         app_password = decrypt_secret(conn_row["encrypted_app_password"])
 
     if not gmail or not app_password:
         return
 
-    min_baseline = min(int(o["baseline_uid"] or 0) for o in pending_orders)
-
     mail = None
-    try:
-        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=12)
-        mail.login(gmail, app_password)
-        mail.select("INBOX")
+    last_exc = None
+    for attempt in range(2):
+        try:
+            mail = open_imap_connection(gmail, app_password, timeout=12)
+            _process_imap_folder(mail, "INBOX", is_inbox=True)
 
-        # Search ONLY UIDs strictly after min_baseline; explicitly filter IMAP quirk
-        search_range = f"UID {min_baseline + 1}:*"
-        status, search_data = mail.uid("SEARCH", None, search_range)
-        raw_uids = search_data[0].split() if (status == "OK" and search_data and search_data[0]) else []
-        candidate_uids = sorted({int(u) for u in raw_uids if u.isdigit() and int(u) > min_baseline})
-
-        for uid in candidate_uids:
+            # Check whether pending orders still remain; if so, check Spam & All Mail read-only
             with get_db() as db:
-                if db.execute("SELECT 1 FROM processed_emails WHERE uid = ?", (uid,)).fetchone():
-                    continue
-
-            status, data = mail.uid("FETCH", str(uid), "(INTERNALDATE RFC822)")
-            if status != "OK" or not data:
-                continue
-
-            raw_email = None
-            meta_bytes = b""
-            for item in data:
-                if isinstance(item, tuple) and len(item) >= 2:
-                    if isinstance(item[0], (bytes, bytearray)):
-                        meta_bytes += item[0]
-                    if isinstance(item[1], (bytes, bytearray)):
-                        raw_email = item[1]
-                elif isinstance(item, (bytes, bytearray)):
-                    meta_bytes += item
-
-            if not raw_email:
-                continue
-
-            msg = email.message_from_bytes(raw_email)
-            msg_id = (msg.get("Message-ID") or f"MSG_{hashlib.sha256(raw_email).hexdigest()[:20]}").strip()
+                remaining_rows = db.execute("SELECT * FROM orders WHERE status = 'pending' ORDER BY created_at ASC").fetchall()
+            if remaining_rows:
+                pre_baseline_map = _collect_pre_baseline_inbox_msg_ids(mail, remaining_rows)
+                for extra_folder in ('"[Gmail]/Spam"', '"[Gmail]/All Mail"'):
+                    try:
+                        _process_imap_folder(mail, extra_folder, is_inbox=False, pre_baseline_msg_ids=pre_baseline_map)
+                    except Exception:
+                        pass
 
             with get_db() as db:
-                if db.execute("SELECT 1 FROM processed_emails WHERE message_id = ? OR uid = ?", (msg_id, uid)).fetchone():
-                    continue
-
-            internaldate_utc = parse_imap_internaldate_utc(meta_bytes, msg)
-            from_hdr = msg.get("From", "")
-            parsed_addr = email.utils.parseaddr(from_hdr)[1].lower()
-            from_domain = parsed_addr.split("@")[-1].strip() if "@" in parsed_addr else from_hdr.split("@")[-1].replace(">", "").strip().lower()
-
-            subject = ""
-            raw_sub = msg.get("Subject", "")
-            for part, enc in decode_header(raw_sub):
-                if isinstance(part, bytes):
-                    subject += part.decode(enc or "utf-8", errors="replace")
-                else:
-                    subject += str(part)
-
-            now_iso = iso_now()
-
-            # 1. Sender domain verification
-            if not any(from_domain == allowed or from_domain.endswith("." + allowed) for allowed in ALLOWED_EMAIL_DOMAINS):
-                with db_lock:
-                    with get_db() as db:
-                        db.execute("""
-                            INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
-                            VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)
-                        """, (msg_id, uid, from_hdr, subject[:200], now_iso))
-                        record_verify_log(db, None, uid, msg_id, None, None, "ignored", "sender not allowed")
-                        db.commit()
+                db.execute("""
+                    UPDATE connection
+                    SET status = 'connected', last_checked = ?, last_poll_at = ?, last_poll_ok = 1, last_error = NULL
+                    WHERE id = 1
+                """, (iso_now(), iso_now()))
+                db.commit()
+            return
+        except (imaplib.IMAP4.abort, imaplib.IMAP4.error, socket.timeout, TimeoutError, BrokenPipeError, OSError) as e:
+            last_exc = e
+            close_imap_silently(mail)
+            mail = None
+            if attempt == 0:
+                time.sleep(0.5)
                 continue
+        except Exception as e:
+            last_exc = e
+            break
+        finally:
+            close_imap_silently(mail)
+            mail = None
 
-            # 2. SPF / DKIM verification when header present
-            auth_results = msg.get("Authentication-Results", "").lower()
-            if "dkim=fail" in auth_results or "spf=fail" in auth_results:
-                with db_lock:
-                    with get_db() as db:
-                        db.execute("""
-                            INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
-                            VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)
-                        """, (msg_id, uid, from_hdr, subject[:200], now_iso))
-                        record_verify_log(db, None, uid, msg_id, None, None, "rejected", "sender auth failed (SPF/DKIM)")
-                        db.commit()
-                continue
-
-            # 3. Decode body text
-            body_text = ""
-            if msg.is_multipart():
-                for part in msg.walk():
-                    ctype = part.get_content_type()
-                    cdisp = str(part.get("Content-Disposition") or "")
-                    if "attachment" in cdisp.lower():
-                        continue
-                    payload = part.get_payload(decode=True)
-                    if not payload:
-                        continue
-                    text_chunk = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
-                    if ctype == "text/plain":
-                        body_text += " " + text_chunk
-                    elif ctype == "text/html":
-                        body_text += " " + clean_html_to_text(text_chunk)
-            else:
-                payload = msg.get_payload(decode=True)
-                if payload:
-                    raw_text = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
-                    body_text = clean_html_to_text(raw_text) if msg.get_content_type() == "text/html" else raw_text
-
-            parsed = None
-            for parser_func in EMAIL_PARSER_REGISTRY:
-                parsed = parser_func(subject, body_text, dict(msg.items()))
-                if parsed:
-                    break
-
-            if not parsed:
-                with db_lock:
-                    with get_db() as db:
-                        db.execute("""
-                            INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
-                            VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)
-                        """, (msg_id, uid, from_hdr, subject[:200], now_iso))
-                        record_verify_log(db, None, uid, msg_id, None, None, "ignored", "not a FamApp credit notification")
-                        db.commit()
-                continue
-
-            parsed_amount = parsed["amount"]
-            parsed_amount_dec = Decimal(parsed["amount_dec"])
-            parsed_utr = parsed["utr"]
-            parsed_txnid = parsed["txn_id"]
-            parsed_sender = parsed["sender_name"]
-            parsed_date_str = parsed["date_str"]
-            fam_date_utc = parse_fam_ist_date_utc(parsed_date_str)
-
-            # Require strict UTR extraction
-            if not parsed_utr:
-                with db_lock:
-                    with get_db() as db:
-                        db.execute("""
-                            INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
-                            VALUES (?, ?, ?, ?, ?, NULL, ?, NULL)
-                        """, (msg_id, uid, from_hdr, subject[:200], now_iso, parsed_amount))
-                        record_verify_log(db, None, uid, msg_id, parsed_amount, None, "rejected", "missing UTR in email")
-                        record_unmatched_payment(db, parsed_amount, parsed_sender, None, parsed_txnid, parsed_date_str or now_iso, msg_id, parsed["raw_snippet"], "Missing UTR in email")
-                        db.commit()
-                continue
-
-            # Require valid server INTERNALDATE and valid parsed IST Date line (converted to UTC)
-            if internaldate_utc is None or fam_date_utc is None:
-                with db_lock:
-                    with get_db() as db:
-                        db.execute("""
-                            INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
-                            VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
-                        """, (msg_id, uid, from_hdr, subject[:200], now_iso, parsed_amount, parsed_utr))
-                        record_verify_log(db, None, uid, msg_id, parsed_amount, parsed_utr, "rejected", "missing or invalid email timestamp")
-                        record_unmatched_payment(db, parsed_amount, parsed_sender, parsed_utr, parsed_txnid, parsed_date_str or now_iso, msg_id, parsed["raw_snippet"], "Missing or invalid email timestamp")
-                        db.commit()
-                continue
-
-            webhook_payload = None
-            with db_lock:
-                with get_db() as db:
-                    # Re-check processed_emails & UTR uniqueness inside transaction
-                    if db.execute("SELECT 1 FROM processed_emails WHERE message_id = ? OR uid = ?", (msg_id, uid)).fetchone():
-                        continue
-
-                    existing_utr_order = db.execute("SELECT id FROM orders WHERE utr = ?", (parsed_utr,)).fetchone()
-                    existing_utr_email = db.execute("SELECT message_id FROM processed_emails WHERE utr = ? AND matched_order_id IS NOT NULL", (parsed_utr,)).fetchone()
-                    if existing_utr_order or existing_utr_email:
-                        db.execute("""
-                            INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
-                            VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
-                        """, (msg_id, uid, from_hdr, subject[:200], now_iso, parsed_amount, parsed_utr))
-                        record_unmatched_payment(db, parsed_amount, parsed_sender, parsed_utr, parsed_txnid, parsed_date_str, msg_id, parsed["raw_snippet"], "Duplicate UTR already used")
-                        record_verify_log(db, existing_utr_order["id"] if existing_utr_order else None, uid, msg_id, parsed_amount, parsed_utr, "rejected", "duplicate UTR")
-                        db.commit()
-                        continue
-
-                    # Fetch pending orders ordered oldest first
-                    current_pending = db.execute("SELECT * FROM orders WHERE status = 'pending' ORDER BY created_at ASC").fetchall()
-
-                    matched_order = None
-                    last_reject_order_id = None
-                    last_reject_reason = None
-
-                    for o in current_pending:
-                        o_amt_dec = Decimal(str(o["payable_amount"])).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-                        if o_amt_dec != parsed_amount_dec:
-                            continue
-
-                        o_baseline = int(o["baseline_uid"] or 0)
-                        if uid <= o_baseline:
-                            last_reject_order_id = o["id"]
-                            last_reject_reason = "uid <= baseline"
-                            continue
-
-                        o_created_utc = parse_iso_utc(o["created_at"])
-                        o_expires_utc = parse_iso_utc(o["expires_at"])
-                        if o_created_utc is None or o_expires_utc is None:
-                            last_reject_order_id = o["id"]
-                            last_reject_reason = "invalid order timestamps"
-                            continue
-
-                        min_allowed = o_created_utc - timedelta(seconds=30)
-                        if internaldate_utc < min_allowed or fam_date_utc < min_allowed:
-                            last_reject_order_id = o["id"]
-                            last_reject_reason = "older than order"
-                            continue
-
-                        if internaldate_utc > o_expires_utc or fam_date_utc > o_expires_utc:
-                            last_reject_order_id = o["id"]
-                            last_reject_reason = "arrived after expiry"
-                            continue
-
-                        matched_order = o
-                        break
-
-                    if matched_order:
-                        cur = db.execute("""
-                            UPDATE orders
-                            SET status = 'paid', utr = ?, txn_id = ?, paid_at = ?
-                            WHERE id = ? AND status = 'pending'
-                        """, (parsed_utr, parsed_txnid, now_iso, matched_order["id"]))
-
-                        if cur.rowcount == 1:
-                            db.execute("""
-                                INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (msg_id, uid, from_hdr, subject[:200], now_iso, matched_order["id"], parsed_amount, parsed_utr))
-                            record_verify_log(db, matched_order["id"], uid, msg_id, parsed_amount, parsed_utr, "matched", "verified payment")
-                            db.commit()
-                            if matched_order["callback_url"]:
-                                webhook_payload = dict(matched_order)
-                        else:
-                            db.execute("""
-                                INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
-                                VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
-                            """, (msg_id, uid, from_hdr, subject[:200], now_iso, parsed_amount, parsed_utr))
-                            record_verify_log(db, matched_order["id"], uid, msg_id, parsed_amount, parsed_utr, "rejected", "order no longer pending")
-                            record_unmatched_payment(db, parsed_amount, parsed_sender, parsed_utr, parsed_txnid, parsed_date_str, msg_id, parsed["raw_snippet"], "Order no longer pending")
-                            db.commit()
-                    else:
-                        if not last_reject_reason:
-                            # Check if an expired order matched this exact amount cleanly
-                            recent_exp = db.execute("SELECT * FROM orders WHERE status = 'expired' ORDER BY created_at DESC LIMIT 20").fetchall()
-                            for eo in recent_exp:
-                                eo_amt_dec = Decimal(str(eo["payable_amount"])).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-                                if eo_amt_dec == parsed_amount_dec and uid > int(eo["baseline_uid"] or 0):
-                                    eo_exp_utc = parse_iso_utc(eo["expires_at"])
-                                    eo_cre_utc = parse_iso_utc(eo["created_at"])
-                                    if eo_cre_utc and eo_exp_utc and internaldate_utc >= (eo_cre_utc - timedelta(seconds=30)):
-                                        last_reject_order_id = eo["id"]
-                                        last_reject_reason = "arrived after expiry" if internaldate_utc > eo_exp_utc else "order already expired"
-                                        break
-                        final_reason = last_reject_reason or "amount mismatch"
-                        final_decision = "rejected" if last_reject_reason else "unmatched"
-                        db.execute("""
-                            INSERT OR IGNORE INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
-                            VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
-                        """, (msg_id, uid, from_hdr, subject[:200], now_iso, parsed_amount, parsed_utr))
-                        record_unmatched_payment(db, parsed_amount, parsed_sender, parsed_utr, parsed_txnid, parsed_date_str, msg_id, parsed["raw_snippet"], final_reason)
-                        record_verify_log(db, last_reject_order_id, uid, msg_id, parsed_amount, parsed_utr, final_decision, final_reason)
-                        db.commit()
-
-            if webhook_payload:
-                dispatch_webhook_async(
-                    order_id=webhook_payload["id"],
-                    status="paid",
-                    amount=webhook_payload["payable_amount"],
-                    base_amount=webhook_payload["base_amount"],
-                    utr=parsed_utr,
-                    txn_id=parsed_txnid,
-                    paid_at=now_iso,
-                    note=webhook_payload["note"],
-                    callback_url=webhook_payload["callback_url"]
-                )
-
-        # Update last connection health
+    if last_exc is not None:
         with get_db() as db:
-            db.execute("UPDATE connection SET status = 'connected', last_checked = ?, last_error = NULL WHERE id = 1", (iso_now(),))
+            db.execute("""
+                UPDATE connection
+                SET last_checked = ?, last_poll_at = ?, last_poll_ok = 0, last_error = ?
+                WHERE id = 1
+            """, (iso_now(), iso_now(), str(last_exc)[:400]))
             db.commit()
-
-    except Exception as e:
-        with get_db() as db:
-            db.execute("UPDATE connection SET status = 'disconnected', last_error = ?, last_checked = ? WHERE id = 1", (str(e), iso_now()))
-            db.commit()
-    finally:
-        if mail:
-            try:
-                mail.close()
-            except Exception:
-                pass
-            try:
-                mail.logout()
-            except Exception:
-                pass
 
 def background_worker_loop():
     while True:
         try:
             check_order_expiries()
             poll_gmail_imap()
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[!] Background worker error: {exc}")
         time.sleep(WORKER_POLL_INTERVAL_SECONDS)
 
 def start_background_worker_once():
     global _worker_started
-    if not _worker_started:
-        _worker_started = True
-        try:
-            check_order_expiries()
-        except Exception:
-            pass
-        worker_thread = threading.Thread(target=background_worker_loop, daemon=True)
-        worker_thread.start()
+    with _worker_lock:
+        if not _worker_started:
+            _worker_started = True
+            try:
+                check_order_expiries()
+            except Exception:
+                pass
+            t = threading.Thread(target=background_worker_loop, daemon=True, name="minorupi-imap-worker")
+            t.start()
 
 # ==============================================================================
 # AUTHENTICATION & API KEY VERIFICATION
@@ -1131,8 +1258,6 @@ def verify_api_key_auth():
         return False, {"code": "MISSING_KEY", "message": "API key required in Authorization: Bearer <KEY> or X-API-Key"}
 
     key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-    
-    # Rate limit per API key (60 req/min)
     now = time.time()
     recent = [t for t in api_rate_tracking[key_hash] if now - t < 60]
     api_rate_tracking[key_hash] = recent
@@ -1148,7 +1273,7 @@ def verify_api_key_auth():
     return True, key_row
 
 # ==============================================================================
-# AI INTEGRATION PROMPT GENERATOR (Section 8.3)
+# AI INTEGRATION PROMPT GENERATOR
 # ==============================================================================
 def generate_ai_prompt_text(stack: str = "python", api_key: str = None, webhook_secret: str = None) -> str:
     base = get_base_url()
@@ -1157,7 +1282,7 @@ def generate_ai_prompt_text(stack: str = "python", api_key: str = None, webhook_
 
     stack_guidelines = {
         "python": """### Python (Flask / FastAPI) Implementation Notes:
-1. Use `requests` or `httpx` to create orders:
+1. Create order:
    ```python
    import requests
    resp = requests.post(
@@ -1173,14 +1298,13 @@ def generate_ai_prompt_text(stack: str = "python", api_key: str = None, webhook_
    import hmac, hashlib
    @app.route('/api/webhook', methods=['POST'])
    def handle_webhook():
-       sig = request.headers.get('X-Signature')
+       sig = request.headers.get('X-Signature', '')
        raw_body = request.get_data()
        expected = hmac.new(WEBHOOK_SECRET.encode(), raw_body, hashlib.sha256).hexdigest()
        if not hmac.compare_digest(sig, expected):
            return ("Invalid signature", 400)
        event = request.json
        if event.get("status") == "paid":
-           # Idempotently mark order as completed in your database
            fulfill_order(event["order_id"], event["utr"])
        return ("OK", 200)
    ```""",
@@ -1200,15 +1324,13 @@ def generate_ai_prompt_text(stack: str = "python", api_key: str = None, webhook_
      })
    });
    const { data } = await res.json();
-   // Redirect customer to data.payment_url
    ```
 2. Webhook verification in Express (Requires raw body):
    ```javascript
    const crypto = require('crypto');
    app.post('/api/webhook', express.raw({ type: 'application/json' }), (req, res) => {
      const signature = req.headers['x-signature'];
-     const hmac = crypto.createHmac('sha256', WEBHOOK_SECRET);
-     const expected = hmac.update(req.body).digest('hex');
+     const expected = crypto.createHmac('sha256', WEBHOOK_SECRET).update(req.body).digest('hex');
      if (signature !== expected) return res.status(400).send('Invalid signature');
      const event = JSON.parse(req.body.toString());
      if (event.status === 'paid') {
@@ -1250,39 +1372,27 @@ def generate_ai_prompt_text(stack: str = "python", api_key: str = None, webhook_
    http_response_code(200);
    ```""",
         "frontend": """### HTML + JavaScript Frontend Notes:
-1. Call your own backend to create the order securely so your API key is never exposed in browser source code!
-2. Your backend creates the order via `POST /api/v1/orders` and returns `data.payment_url` and `data.qr_base64`.
-3. You can display the payment QR in a modal or redirect the customer to `data.payment_url`.
-4. Poll status or await redirect to complete the purchase.""",
-        "telegram_python": """### Telegram Bot (Python - python-telegram-bot / aiogram) Notes:
-1. When user asks to purchase:
-   - Ask for amount or item selection.
-   - Send `POST /api/v1/orders` with `amount`, `note=f"TG_{user_id}"`, and optional callback URL.
-   - Gateway returns `qr_base64`, `payment_url`, and `upi_link`.
-2. Send the QR image to the user in Telegram:
-   - Decode `qr_base64` and send with `bot.send_photo`.
-   - Add inline keyboard with a button "Pay via UPI App" pointing to `upi_link` or `payment_url`.
-3. Polling or Webhook:
-   - Start an async task polling `GET /api/v1/orders/{order_id}` every 5 seconds until `status == 'paid'` or `expired`.
-   - When paid: notify user in Telegram "Payment Received! UTR: {utr}" and deliver digital goods!""",
+1. Call your backend to create the order so your API key stays secret.
+2. Backend creates the order via `POST /api/v1/orders` and returns `data.payment_url` and `data.qr_base64`.
+3. Redirect customers to `data.payment_url` or display `data.qr_base64`.""",
+        "telegram_python": """### Telegram Bot (Python) Notes:
+1. Create order via `POST /api/v1/orders` with `amount` and `note=f"TG_{user_id}"`.
+2. Send `qr_base64` photo and an inline button linking `payment_url`.
+3. Poll `GET /api/v1/orders/{order_id}` every 5s or receive webhook until `status == 'paid'`.""",
         "telegram_node": """### Telegram Bot (Node.js - Telegraf) Notes:
-1. In bot handler:
-   - Request order from gateway `POST /api/v1/orders`.
-   - Send QR buffer with `ctx.replyWithPhoto({ source: Buffer.from(qrBase64, 'base64') })`.
-   - Add inline button with link `data.payment_url`.
-2. Monitor status:
-   - Poll `GET /api/v1/orders/<order_id>` every 4-5s or set up Express webhook receiver.
-   - On success: send celebration message with UTR and activate perks.""",
-        "generic": """### General Guidelines:
-- Base URL: {GATEWAY_BASE_URL}
-- Auth: Authorization: Bearer {GATEWAY_API_KEY}
-- Always verify the HMAC-SHA256 signature on the raw request body for webhooks.
-- Store the gateway `order_id` in your local database.""".replace("{GATEWAY_BASE_URL}", base).replace("{GATEWAY_API_KEY}", key_val)
+1. Request order from `POST /api/v1/orders`.
+2. Send QR photo + button to `data.payment_url`.
+3. Poll `GET /api/v1/orders/<order_id>` or use webhook until `status === 'paid'`.""",
+        "generic": f"""### General Guidelines:
+- Base URL: {base}
+- Auth: Authorization: Bearer {key_val}
+- Verify HMAC-SHA256 signature on raw body for webhooks.
+- Fulfill strictly when status == 'paid'."""
     }
 
     selected_guide = stack_guidelines.get(stack, stack_guidelines["generic"])
 
-    prompt = f"""You are a senior full-stack developer. Integrate the MinorUPI private personal UPI payment gateway into my project.
+    return f"""You are a senior full-stack developer. Integrate the MinorUPI private personal UPI payment gateway into my project.
 
 ### Gateway Credentials & Endpoints:
 - Base URL: {base}
@@ -1308,7 +1418,7 @@ def generate_ai_prompt_text(stack: str = "python", api_key: str = None, webhook_
      "data": {{
        "order_id": "ORD-12345678",
        "base_amount": 99.00,
-       "payable_amount": 99.01,
+       "payable_amount": 99.00,
        "payment_url": "{base}/pay/ORD-12345678",
        "qr_base64": "data:image/png;base64,...",
        "upi_link": "upi://pay?pa=...",
@@ -1318,56 +1428,34 @@ def generate_ai_prompt_text(stack: str = "python", api_key: str = None, webhook_
    }}
 
 2. Customer Checkout:
-   Direct the customer to `payment_url` OR display the provided `qr_base64` and `upi_link` in your custom UI.
+   Direct the customer to `payment_url` OR display `qr_base64` and `upi_link`.
 
 3. Receive Webhook & Verify Signature:
-   When payment is verified, the gateway sends a POST request to your `callback_url`:
-   Headers:
-     Content-Type: application/json
-     X-Signature: <hex HMAC-SHA256 of raw body using Webhook Secret>
-   Body:
-   {{
-     "order_id": "ORD-12345678",
-     "status": "paid",
-     "amount": 99.01,
-     "base_amount": 99.00,
-     "utr": "006523947230",
-     "txn_id": "TXN_78192038",
-     "paid_at": "2026-11-17T03:52:10Z"
-   }}
-   CRITICAL: Verify the HMAC-SHA256 signature on the raw body before fulfilling any order!
+   Headers: Content-Type: application/json, X-Signature: <hex HMAC-SHA256 of raw body>
+   CRITICAL: Verify HMAC-SHA256 signature before fulfilling any order.
 
-4. Double-Check Verification (Idempotent):
-   You can also fetch `GET {base}/api/v1/orders/<order_id>` to verify status independently.
-
-5. Order Lifecycle:
+4. Order Lifecycle:
    Statuses: `pending`, `paid`, `expired`, `cancelled`, `failed`.
-   Only fulfill product or digital service when status is strictly `paid`.
+   Fulfill product or service ONLY when status is strictly `paid`.
 
 {selected_guide}
 
-### Safety & Architecture Rules:
-- Never store the Gateway API Key in client-side code. Keep it strictly in server-side configuration.
-- Implement idempotency: multiple webhooks for the same order must not grant duplicate items.
-- Always handle order expiry and cancellation gracefully.
-
-Ask me for project details (framework, where to place the pay button, what to do after payment) only if something is missing, otherwise write complete working code with file names.
-"""
-    return prompt.strip()
+### Safety Rules:
+- Keep Gateway API Key strictly server-side.
+- Make fulfillment idempotent.
+- Handle expired and cancelled orders cleanly.
+""".strip()
 
 # ==============================================================================
-# PUBLIC ROUTING & FRONTEND TEMPLATES
+# SINGLE HTML ENTRYPOINT ROUTING
 # ==============================================================================
 @app.route("/")
 @app.route("/setup")
 @app.route("/login")
 @app.route("/dashboard")
 @app.route("/docs")
-def route_spa():
-    return send_file(os.path.join(BASE_DIR, "dashboard.html"))
-
 @app.route("/pay/<order_id>")
-def route_checkout(order_id):
+def route_single_html(order_id=None):
     return send_file(os.path.join(BASE_DIR, "index.html"))
 
 @app.route("/ai-prompt.txt")
@@ -1375,20 +1463,19 @@ def route_ai_prompt_txt():
     stack = request.args.get("stack", "python")
     include_key = request.args.get("include_key", "0") == "1"
     include_secret = request.args.get("include_secret", "0") == "1"
-    
+
     api_key_str = None
     if include_key and "admin_id" in session:
         with get_db() as db:
             k = db.execute("SELECT prefix FROM api_keys WHERE revoked = 0 ORDER BY id DESC LIMIT 1").fetchone()
             if k:
-                api_key_str = f"{k['prefix']}... (use full key generated)"
-    
+                api_key_str = f"{k['prefix']} (use full key generated)"
+
     sec_str = WEBHOOK_SECRET if include_secret and "admin_id" in session else "YOUR_WEBHOOK_SECRET"
-    prompt = generate_ai_prompt_text(stack, api_key_str, sec_str)
-    return Response(prompt, mimetype="text/plain; charset=utf-8")
+    return Response(generate_ai_prompt_text(stack, api_key_str, sec_str), mimetype="text/plain; charset=utf-8")
 
 # ==============================================================================
-# SESSION STATE, CSRF TOKEN & PUBLIC CHECKOUT ENDPOINTS
+# SESSION STATE, CSRF & PUBLIC CHECKOUT ENDPOINTS
 # ==============================================================================
 @app.route("/api/session/state", methods=["GET"])
 def api_session_state():
@@ -1406,13 +1493,9 @@ def api_session_state():
 
 @app.route("/api/csrf", methods=["GET"])
 def api_get_csrf():
-    return jsonify({
-        "success": True,
-        "token": generate_csrf_token()
-    })
+    return jsonify({"success": True, "token": generate_csrf_token()})
 
 def _evaluate_order_expiry(db, order_row):
-    """Returns (order_dict, server_now_dt, remaining_seconds) and expires atomically if overdue."""
     now_dt = datetime.now(timezone.utc)
     exp_dt = parse_iso_utc(order_row["expires_at"])
     remaining_seconds = max(0, int((exp_dt - now_dt).total_seconds())) if exp_dt else 0
@@ -1441,14 +1524,10 @@ def api_public_order(order_id):
             if not order:
                 return jsonify({"success": False, "error": {"code": "ORDER_NOT_FOUND", "message": "Order not found"}}), 404
 
-            # Block checkout if merchant has not configured UPI & Gmail
             if order["status"] == "pending" and not is_gateway_configured():
                 return jsonify({
                     "success": False,
-                    "error": {
-                        "code": "NOT_CONFIGURED",
-                        "message": "Merchant is not configured / temporarily unavailable"
-                    }
+                    "error": {"code": "NOT_CONFIGURED", "message": "Merchant is not configured / temporarily unavailable"}
                 }), 503
 
             order_dict, now_dt, remaining_seconds, should_wh = _evaluate_order_expiry(db, order)
@@ -1474,8 +1553,10 @@ def api_public_order(order_id):
         "server_now": now_dt.isoformat(),
         "order": {
             "order_id": order_dict["id"],
-            "base_amount": order_dict["base_amount"],
-            "payable_amount": order_dict["payable_amount"],
+            "base_amount": float(to_decimal_amount(order_dict["base_amount"])),
+            "payable_amount": float(to_decimal_amount(order_dict["payable_amount"])),
+            "base_amount_str": format_amount_str(order_dict["base_amount"]),
+            "payable_amount_str": format_amount_str(order_dict["payable_amount"]),
             "status": order_dict["status"],
             "fail_reason": order_dict["fail_reason"],
             "utr": order_dict["utr"],
@@ -1506,10 +1587,7 @@ def api_public_status(order_id):
             if order["status"] == "pending" and not is_gateway_configured():
                 return jsonify({
                     "success": False,
-                    "error": {
-                        "code": "NOT_CONFIGURED",
-                        "message": "Merchant is not configured / temporarily unavailable"
-                    }
+                    "error": {"code": "NOT_CONFIGURED", "message": "Merchant is not configured / temporarily unavailable"}
                 }), 503
 
             order_dict, now_dt, remaining_seconds, should_wh = _evaluate_order_expiry(db, order)
@@ -1533,7 +1611,8 @@ def api_public_status(order_id):
         "success": True,
         "order_id": order_dict["id"],
         "status": order_dict["status"],
-        "payable_amount": order_dict["payable_amount"],
+        "payable_amount": float(to_decimal_amount(order_dict["payable_amount"])),
+        "payable_amount_str": format_amount_str(order_dict["payable_amount"]),
         "utr": order_dict["utr"],
         "redirect_url": order_dict["redirect_url"],
         "expires_at": order_dict["expires_at"],
@@ -1559,7 +1638,7 @@ def api_public_qr_png(order_id):
     return resp
 
 # ==============================================================================
-# PUBLIC REST API V1 (Section 8.1)
+# PUBLIC REST API V1
 # ==============================================================================
 @app.route("/api/v1/orders", methods=["POST"])
 def api_v1_create_order():
@@ -1570,10 +1649,7 @@ def api_v1_create_order():
     if not is_gateway_configured():
         return jsonify({
             "success": False,
-            "error": {
-                "code": "NOT_CONFIGURED",
-                "message": "Connect your UPI ID and Gmail first."
-            }
+            "error": {"code": "NOT_CONFIGURED", "message": "Connect your UPI ID and Gmail first."}
         }), 409
 
     data = request.get_json(silent=True) or {}
@@ -1582,13 +1658,12 @@ def api_v1_create_order():
         return jsonify({"success": False, "error": {"code": "INVALID_PARAM", "message": "amount is required"}}), 400
 
     try:
-        base_amount = float(Decimal(str(amount_raw)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-        if base_amount <= 0:
+        base_dec = to_decimal_amount(amount_raw)
+        if base_dec <= Decimal("0.00"):
             raise ValueError()
     except Exception:
         return jsonify({"success": False, "error": {"code": "INVALID_PARAM", "message": "amount must be a positive number"}}), 400
 
-    # Expiry in minutes (default 5 for API)
     expiry_minutes = data.get("expiry_minutes", API_DEFAULT_EXPIRY_MINUTES)
     try:
         expiry_minutes = max(1, int(expiry_minutes))
@@ -1596,14 +1671,9 @@ def api_v1_create_order():
         expiry_minutes = API_DEFAULT_EXPIRY_MINUTES
 
     custom_id = data.get("order_id")
-    callback_url = data.get("callback_url", "").strip() or None
-    redirect_url = data.get("redirect_url", "").strip() or None
-    note = data.get("note", "").strip() or None
-
-    try:
-        payable_amount = allocate_unique_payable_amount(base_amount)
-    except ValueError as e:
-        return jsonify({"success": False, "error": {"code": "NO_SLOT_AVAILABLE", "message": str(e)}}), 409
+    callback_url = (data.get("callback_url") or "").strip() or None
+    redirect_url = (data.get("redirect_url") or "").strip() or None
+    note = (data.get("note") or "").strip() or None
 
     order_id = custom_id if custom_id else f"ORD-{secrets.token_hex(4).upper()}"
     baseline_uid = fetch_connection_baseline_uid()
@@ -1611,26 +1681,35 @@ def api_v1_create_order():
     created_at = now_dt.isoformat()
     expires_at = (now_dt + timedelta(minutes=expiry_minutes)).isoformat()
 
-    with get_db() as db:
-        # Check uniqueness of order_id
-        if db.execute("SELECT id FROM orders WHERE id = ?", (order_id,)).fetchone():
-            return jsonify({"success": False, "error": {"code": "DUPLICATE_ID", "message": "order_id already exists"}}), 409
+    with db_lock:
+        with get_db() as db:
+            if db.execute("SELECT id FROM orders WHERE id = ?", (order_id,)).fetchone():
+                return jsonify({"success": False, "error": {"code": "DUPLICATE_ID", "message": "order_id already exists"}}), 409
 
-        db.execute("""
-            INSERT INTO orders (id, source, base_amount, payable_amount, status, baseline_uid, created_at, expires_at, callback_url, redirect_url, note)
-            VALUES (?, 'api', ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
-        """, (order_id, base_amount, payable_amount, baseline_uid, created_at, expires_at, callback_url, redirect_url, note))
-        db.commit()
+            try:
+                payable_dec = allocate_payable_amount_in_db(db, base_dec)
+            except AmountConflictError as e:
+                return jsonify({"success": False, "error": {"code": "AMOUNT_BUSY", "message": str(e)}}), 409
 
-    pay_data = generate_upi_payment_data(order_id, payable_amount)
+            base_val = float(base_dec)
+            payable_val = float(payable_dec)
+            db.execute("""
+                INSERT INTO orders (id, source, base_amount, payable_amount, status, baseline_uid, created_at, expires_at, callback_url, redirect_url, note)
+                VALUES (?, 'api', ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+            """, (order_id, base_val, payable_val, baseline_uid, created_at, expires_at, callback_url, redirect_url, note))
+            db.commit()
+
+    pay_data = generate_upi_payment_data(order_id, payable_dec)
     payment_url = f"{get_base_url()}/pay/{order_id}"
 
     return jsonify({
         "success": True,
         "data": {
             "order_id": order_id,
-            "base_amount": base_amount,
-            "payable_amount": payable_amount,
+            "base_amount": float(base_dec),
+            "payable_amount": float(payable_dec),
+            "base_amount_str": f"{base_dec:.2f}",
+            "payable_amount_str": f"{payable_dec:.2f}",
             "payment_url": payment_url,
             "qr_base64": pay_data["qr_base64"],
             "upi_link": pay_data["upi_link"],
@@ -1657,8 +1736,8 @@ def api_v1_get_order(order_id):
         "data": {
             "order_id": order["id"],
             "source": order["source"],
-            "base_amount": order["base_amount"],
-            "payable_amount": order["payable_amount"],
+            "base_amount": float(to_decimal_amount(order["base_amount"])),
+            "payable_amount": float(to_decimal_amount(order["payable_amount"])),
             "status": order["status"],
             "fail_reason": order["fail_reason"],
             "utr": order["utr"],
@@ -1692,17 +1771,7 @@ def api_v1_cancel_order(order_id):
                 return jsonify({"success": False, "error": {"code": "INVALID_STATE", "message": f"Cannot cancel order with status '{st}'"}}), 400
 
     if order["callback_url"]:
-        dispatch_webhook_async(
-            order_id=order["id"],
-            status="cancelled",
-            amount=order["payable_amount"],
-            base_amount=order["base_amount"],
-            utr=None,
-            txn_id=None,
-            paid_at=None,
-            note=order["note"],
-            callback_url=order["callback_url"]
-        )
+        dispatch_webhook_async(order["id"], "cancelled", order["payable_amount"], order["base_amount"], None, None, None, order["note"], order["callback_url"])
 
     return jsonify({"success": True, "message": "Order cancelled successfully"})
 
@@ -1726,32 +1795,22 @@ def api_v1_list_orders():
             orders = db.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT ? OFFSET ?", (limit, offset)).fetchall()
             total = db.execute("SELECT COUNT(*) as c FROM orders").fetchone()["c"]
 
-    items = []
-    for o in orders:
-        items.append({
-            "order_id": o["id"],
-            "source": o["source"],
-            "base_amount": o["base_amount"],
-            "payable_amount": o["payable_amount"],
-            "status": o["status"],
-            "utr": o["utr"],
-            "created_at": o["created_at"],
-            "expires_at": o["expires_at"],
-            "paid_at": o["paid_at"]
-        })
+    items = [{
+        "order_id": o["id"],
+        "source": o["source"],
+        "base_amount": float(to_decimal_amount(o["base_amount"])),
+        "payable_amount": float(to_decimal_amount(o["payable_amount"])),
+        "status": o["status"],
+        "utr": o["utr"],
+        "created_at": o["created_at"],
+        "expires_at": o["expires_at"],
+        "paid_at": o["paid_at"]
+    } for o in orders]
 
-    return jsonify({
-        "success": True,
-        "data": {
-            "orders": items,
-            "total": total,
-            "page": page,
-            "limit": limit
-        }
-    })
+    return jsonify({"success": True, "data": {"orders": items, "total": total, "page": page, "limit": limit}})
 
 # ==============================================================================
-# ADMIN AUTH & PROFILE ENDPOINTS (Section 3)
+# ADMIN AUTH & PROFILE ENDPOINTS
 # ==============================================================================
 @app.route("/api/setup", methods=["POST"])
 def api_setup():
@@ -1770,10 +1829,8 @@ def api_setup():
 
         if not name or not email_addr or not password:
             return jsonify({"success": False, "error": {"code": "MISSING_FIELDS", "message": "Name, email, and password are required"}}), 400
-
         if password != confirm_password:
             return jsonify({"success": False, "error": {"code": "PASSWORD_MISMATCH", "message": "Passwords do not match"}}), 400
-
         if len(password) < 6:
             return jsonify({"success": False, "error": {"code": "WEAK_PASSWORD", "message": "Password must be at least 6 characters"}}), 400
 
@@ -1785,11 +1842,7 @@ def api_setup():
 
     session.permanent = True
     session["admin_id"] = admin_id
-    return jsonify({
-        "success": True,
-        "message": "Admin account created successfully",
-        "csrf_token": generate_csrf_token()
-    })
+    return jsonify({"success": True, "message": "Admin account created successfully", "csrf_token": generate_csrf_token()})
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
@@ -1813,21 +1866,14 @@ def api_login():
     reset_failed_login(ip)
     session.permanent = True
     session["admin_id"] = admin_row["id"]
-    return jsonify({
-        "success": True,
-        "message": "Logged in successfully",
-        "csrf_token": generate_csrf_token()
-    })
+    return jsonify({"success": True, "message": "Logged in successfully", "csrf_token": generate_csrf_token()})
 
 @app.route("/api/logout", methods=["POST"])
 def api_logout():
     if not verify_csrf():
         return csrf_error_response()
     session.clear()
-    return jsonify({
-        "success": True,
-        "csrf_token": generate_csrf_token()
-    })
+    return jsonify({"success": True, "csrf_token": generate_csrf_token()})
 
 @app.route("/api/me")
 def api_me():
@@ -1879,13 +1925,13 @@ def api_admin_profile():
     return jsonify({"success": True, "message": "Profile updated successfully"})
 
 # ==============================================================================
-# DASHBOARD CONNECTION MANAGEMENT (Section 4.2)
+# DASHBOARD CONNECTION MANAGEMENT & DIAGNOSTICS
 # ==============================================================================
 @app.route("/api/admin/connection", methods=["GET"])
 @require_admin
 def api_admin_get_connection():
     with get_db() as db:
-        row = db.execute("SELECT upi_id, gmail, encrypted_app_password, status, last_checked, last_error FROM connection WHERE id = 1").fetchone()
+        row = db.execute("SELECT upi_id, gmail, encrypted_app_password, status, last_checked, last_error, last_poll_at, last_poll_ok FROM connection WHERE id = 1").fetchone()
         if not row:
             return jsonify({
                 "configured": False,
@@ -1896,6 +1942,8 @@ def api_admin_get_connection():
                 "status": "disconnected",
                 "last_checked": None,
                 "last_error": None,
+                "last_poll_at": None,
+                "last_poll_ok": True,
                 "has_password": False
             })
         is_conn = (
@@ -1913,6 +1961,8 @@ def api_admin_get_connection():
             "status": row["status"],
             "last_checked": row["last_checked"],
             "last_error": row["last_error"],
+            "last_poll_at": row["last_poll_at"],
+            "last_poll_ok": bool(row["last_poll_ok"]) if row["last_poll_ok"] is not None else True,
             "has_password": bool(row["encrypted_app_password"])
         })
 
@@ -1936,38 +1986,37 @@ def api_admin_save_connection():
     if not upi_id or not gmail or not app_password:
         return jsonify({"success": False, "error": {"code": "MISSING_FIELDS", "message": "UPI ID, Gmail address, and App Password are required"}}), 400
 
-    # Test IMAP connection actively before saving
     try:
-        test_mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=10)
-        test_mail.login(gmail, app_password)
-        test_mail.logout()
+        test_mail = open_imap_connection(gmail, app_password, timeout=10)
+        test_mail.select("INBOX", readonly=True)
+        close_imap_silently(test_mail)
     except Exception as e:
         with get_db() as db:
             existing = db.execute("SELECT id FROM connection WHERE id = 1").fetchone()
             if existing:
-                db.execute("UPDATE connection SET status = 'disconnected', last_error = ?, last_checked = ? WHERE id = 1", (str(e), iso_now()))
+                db.execute("UPDATE connection SET status = 'disconnected', last_error = ?, last_checked = ?, last_poll_ok = 0 WHERE id = 1", (str(e), iso_now()))
                 db.commit()
         return jsonify({
             "success": False,
-            "error": {
-                "code": "IMAP_FAILED",
-                "message": f"Connection failed: wrong email or app password ({str(e)})"
-            }
+            "error": {"code": "IMAP_FAILED", "message": f"Connection failed: wrong email or app password ({str(e)})"}
         }), 400
 
+    now_iso = iso_now()
     enc_pwd = encrypt_secret(app_password)
     with get_db() as db:
         db.execute("""
-            INSERT INTO connection (id, upi_id, gmail, encrypted_app_password, status, last_checked, last_error)
-            VALUES (1, ?, ?, ?, 'connected', ?, NULL)
+            INSERT INTO connection (id, upi_id, gmail, encrypted_app_password, status, last_checked, last_error, last_poll_at, last_poll_ok)
+            VALUES (1, ?, ?, ?, 'connected', ?, NULL, ?, 1)
             ON CONFLICT(id) DO UPDATE SET
                 upi_id = excluded.upi_id,
                 gmail = excluded.gmail,
                 encrypted_app_password = excluded.encrypted_app_password,
                 status = 'connected',
                 last_checked = excluded.last_checked,
-                last_error = NULL
-        """, (upi_id, gmail, enc_pwd, iso_now()))
+                last_error = NULL,
+                last_poll_at = excluded.last_poll_at,
+                last_poll_ok = 1
+        """, (upi_id, gmail, enc_pwd, now_iso, now_iso))
         db.commit()
 
     return jsonify({"success": True, "message": "Gmail IMAP & UPI connection verified and saved successfully"})
@@ -1979,35 +2028,170 @@ def api_admin_disconnect():
         return csrf_error_response()
 
     with get_db() as db:
-        db.execute("UPDATE connection SET status = 'disconnected', last_error = 'Manually disconnected' WHERE id = 1")
+        db.execute("UPDATE connection SET status = 'disconnected', last_error = 'Manually disconnected', last_poll_ok = 0 WHERE id = 1")
         db.commit()
     return jsonify({"success": True, "message": "Disconnected"})
 
+@app.route("/api/admin/test-verification", methods=["POST"])
+@require_admin
+def api_admin_test_verification():
+    """
+    Connects to Gmail IMAP (INBOX, and Spam/All Mail fallback if needed),
+    inspects the last 5 Fam credit emails, and reports parsed fields and what
+    verification decision each email would receive against pending orders.
+    """
+    if not verify_csrf():
+        return csrf_error_response()
+
+    check_order_expiries()
+    with get_db() as db:
+        conn_row = db.execute("SELECT * FROM connection WHERE id = 1").fetchone()
+        if not conn_row or not conn_row["gmail"] or not conn_row["encrypted_app_password"]:
+            return jsonify({"success": False, "error": {"code": "NOT_CONFIGURED", "message": "Connect Gmail and App Password first."}}), 400
+        gmail = conn_row["gmail"]
+        app_password = decrypt_secret(conn_row["encrypted_app_password"])
+        pending_orders = [dict(r) for r in db.execute("SELECT * FROM orders WHERE status = 'pending' ORDER BY created_at ASC").fetchall()]
+        paid_utrs = {r["utr"] for r in db.execute("SELECT utr FROM orders WHERE utr IS NOT NULL AND status = 'paid'").fetchall()}
+
+    mail = None
+    results = []
+    seen_msg_ids = set()
+    try:
+        mail = open_imap_connection(gmail, app_password, timeout=12)
+        folders = [("INBOX", True), ('"[Gmail]/Spam"', False), ('"[Gmail]/All Mail"', False)]
+        for folder_name, is_inbox in folders:
+            if len(results) >= 5:
+                break
+            st, _ = mail.select(folder_name, readonly=True)
+            if st != "OK":
+                continue
+            st_s, s_data = mail.uid("SEARCH", None, "ALL")
+            if st_s != "OK" or not s_data or not s_data[0]:
+                continue
+            uids = [int(u) for u in s_data[0].split() if u.isdigit()]
+            # Inspect newest 40 emails in folder for up to 5 Fam credit notifications
+            for uid in reversed(uids[-40:]):
+                if len(results) >= 5:
+                    break
+                st_f, f_data = mail.uid("FETCH", str(uid), "(BODY.PEEK[] INTERNALDATE)")
+                if st_f != "OK" or not f_data:
+                    continue
+                meta_bytes, raw_email = _extract_fetch_payload(f_data)
+                if not raw_email:
+                    continue
+                msg = email.message_from_bytes(raw_email)
+                msg_id = (msg.get("Message-ID") or f"UID_{folder_name}_{uid}").strip()
+                if msg_id in seen_msg_ids:
+                    continue
+
+                from_hdr = msg.get("From", "")
+                subject = decode_mime_header(msg.get("Subject", ""))
+                body_text = decode_email_body(msg)
+                internaldate_utc = parse_imap_internaldate_utc(meta_bytes, msg)
+
+                sender_ok = is_sender_allowed(from_hdr, body_text)
+                if not sender_ok and "fam" not in (from_hdr + " " + subject).lower():
+                    continue
+
+                seen_msg_ids.add(msg_id)
+                parsed = parse_famapp_email(subject, body_text, dict(msg.items()))
+                if not parsed and not sender_ok:
+                    continue
+
+                parsed_amt_str = parsed["amount_dec"] if parsed else None
+                parsed_utr = parsed["utr"] if parsed else None
+                fam_date = parsed["date_str"] if parsed else None
+
+                if not sender_ok:
+                    decision = "sender not allowed"
+                    decision_type = "rejected"
+                elif is_auth_header_failed(msg.get("Authentication-Results", "")):
+                    decision = "sender auth failed"
+                    decision_type = "rejected"
+                elif not parsed:
+                    decision = "not a FamApp credit notification"
+                    decision_type = "ignored"
+                elif not parsed_utr:
+                    decision = "missing UTR"
+                    decision_type = "rejected"
+                elif parsed_utr in paid_utrs:
+                    decision = "duplicate UTR"
+                    decision_type = "rejected"
+                else:
+                    parsed_amt_dec = to_decimal_amount(parsed_amt_str)
+                    decision = "no pending order with this amount"
+                    decision_type = "unmatched"
+                    for o in pending_orders:
+                        if to_decimal_amount(o["payable_amount"]) != parsed_amt_dec:
+                            continue
+                        o_base = o["baseline_uid"]
+                        if is_inbox and o_base is not None and int(o_base) > 0 and uid < int(o_base):
+                            decision = f"older than order {o['id']} (uid < baseline)"
+                            decision_type = "rejected"
+                            continue
+                        o_cre = parse_iso_utc(o["created_at"])
+                        o_exp = parse_iso_utc(o["expires_at"])
+                        if internaldate_utc and o_cre and internaldate_utc < (o_cre - timedelta(seconds=120)):
+                            decision = f"older than order {o['id']}"
+                            decision_type = "rejected"
+                            continue
+                        if internaldate_utc and o_exp and internaldate_utc > (o_exp + timedelta(seconds=60)):
+                            decision = f"arrived after expiry ({o['id']})"
+                            decision_type = "rejected"
+                            continue
+                        decision = f"would match order {o['id']}"
+                        decision_type = "matched"
+                        break
+
+                results.append({
+                    "uid": uid,
+                    "folder": folder_name.strip('"'),
+                    "from": email.utils.parseaddr(from_hdr)[1] or from_hdr,
+                    "received_at": internaldate_utc.isoformat() if internaldate_utc else None,
+                    "fam_date": fam_date,
+                    "parsed_amount": parsed_amt_str,
+                    "parsed_utr": parsed_utr,
+                    "decision": decision,
+                    "decision_type": decision_type
+                })
+
+        with get_db() as db:
+            db.execute("UPDATE connection SET last_checked = ?, last_poll_at = ?, last_poll_ok = 1, last_error = NULL WHERE id = 1", (iso_now(), iso_now()))
+            db.commit()
+
+        return jsonify({
+            "success": True,
+            "checked_at": iso_now(),
+            "pending_count": len(pending_orders),
+            "emails": results
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": {"code": "DIAGNOSTIC_FAILED", "message": f"IMAP diagnostic failed: {str(e)}"}
+        }), 500
+    finally:
+        close_imap_silently(mail)
+
 # ==============================================================================
-# DASHBOARD STATS, ORDERS & PAYMENT LINKS (Section 4.1, 4.3, 4.4)
+# DASHBOARD STATS, ORDERS & PAYMENT LINKS
 # ==============================================================================
 @app.route("/api/admin/stats")
 @require_admin
 def api_admin_stats():
     check_order_expiries()
     with get_db() as db:
-        # Aggregate order counters
         status_counts = dict(db.execute("SELECT status, COUNT(*) as c FROM orders GROUP BY status").fetchall())
         total_payments = sum(status_counts.values())
 
-        # Today's stats (UTC)
         today_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         today_row = db.execute("""
             SELECT COUNT(*) as count, COALESCE(SUM(payable_amount), 0) as amount
-            FROM orders
-            WHERE status = 'paid' AND created_at LIKE ?
+            FROM orders WHERE status = 'paid' AND created_at LIKE ?
         """, (f"{today_prefix}%",)).fetchone()
 
-        total_received_row = db.execute("""
-            SELECT COALESCE(SUM(payable_amount), 0) as total FROM orders WHERE status = 'paid'
-        """).fetchone()
+        total_received_row = db.execute("SELECT COALESCE(SUM(payable_amount), 0) as total FROM orders WHERE status = 'paid'").fetchone()
 
-        # Last 30 days time series for Chart.js
         time_series = []
         for i in range(29, -1, -1):
             day_str = (datetime.now(timezone.utc) - timedelta(days=i)).strftime("%Y-%m-%d")
@@ -2018,12 +2202,10 @@ def api_admin_stats():
             time_series.append({
                 "date": day_str,
                 "count": day_stat["cnt"],
-                "amount": round(day_stat["amt"], 2)
+                "amount": float(to_decimal_amount(day_stat["amt"]))
             })
 
-        # Recent 10 transactions
-        recent_txns = db.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 10").fetchall()
-        recent = [dict(r) for r in recent_txns]
+        recent_txns = [dict(r) for r in db.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 10").fetchall()]
 
     return jsonify({
         "success": True,
@@ -2035,11 +2217,11 @@ def api_admin_stats():
             "cancelled": status_counts.get("cancelled", 0),
             "failed": status_counts.get("failed", 0),
             "today_count": today_row["count"],
-            "today_amount": round(today_row["amount"], 2),
-            "total_received": round(total_received_row["total"], 2)
+            "today_amount": float(to_decimal_amount(today_row["amount"])),
+            "total_received": float(to_decimal_amount(total_received_row["total"]))
         },
         "time_series": time_series,
-        "recent_transactions": recent
+        "recent_transactions": recent_txns
     })
 
 @app.route("/api/admin/orders", methods=["GET"])
@@ -2074,10 +2256,9 @@ def api_admin_get_orders():
         total = db.execute(count_query, params).fetchone()["c"]
         rows = db.execute(query, params_for_list).fetchall()
 
-    now_iso = iso_now()
     return jsonify({
         "success": True,
-        "server_now": now_iso,
+        "server_now": iso_now(),
         "orders": [dict(r) for r in rows],
         "total": total,
         "page": page,
@@ -2091,36 +2272,23 @@ def api_admin_create_payment_link():
         return csrf_error_response()
 
     if not is_gateway_configured():
-        return jsonify({
-            "success": False,
-            "error": {
-                "code": "NOT_CONFIGURED",
-                "message": "Connect your UPI ID and Gmail first."
-            }
-        }), 409
+        return jsonify({"success": False, "error": {"code": "NOT_CONFIGURED", "message": "Connect your UPI ID and Gmail first."}}), 409
 
     data = request.get_json(silent=True) or {}
     try:
-        base_amount = float(Decimal(str(data.get("amount"))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-        if base_amount <= 0:
+        base_dec = to_decimal_amount(data.get("amount"))
+        if base_dec <= Decimal("0.00"):
             raise ValueError()
     except Exception:
         return jsonify({"success": False, "error": {"code": "INVALID_AMOUNT", "message": "Amount must be a positive number"}}), 400
 
     try:
-        expiry_minutes = int(data.get("expiry_minutes", 10))
-        if expiry_minutes < 1:
-            expiry_minutes = 10
+        expiry_minutes = max(1, int(data.get("expiry_minutes", 10)))
     except Exception:
         expiry_minutes = 10
 
-    note = data.get("note", "").strip() or None
-    redirect_url = data.get("redirect_url", "").strip() or None
-
-    try:
-        payable_amount = allocate_unique_payable_amount(base_amount)
-    except ValueError as e:
-        return jsonify({"success": False, "error": {"code": "NO_SLOT", "message": str(e)}}), 409
+    note = (data.get("note") or "").strip() or None
+    redirect_url = (data.get("redirect_url") or "").strip() or None
 
     order_id = f"PL-{secrets.token_hex(4).upper()}"
     baseline_uid = fetch_connection_baseline_uid()
@@ -2128,20 +2296,27 @@ def api_admin_create_payment_link():
     created_at = now_dt.isoformat()
     expires_at = (now_dt + timedelta(minutes=expiry_minutes)).isoformat()
 
-    with get_db() as db:
-        db.execute("""
-            INSERT INTO orders (id, source, base_amount, payable_amount, status, baseline_uid, created_at, expires_at, redirect_url, note)
-            VALUES (?, 'link', ?, ?, 'pending', ?, ?, ?, ?, ?)
-        """, (order_id, base_amount, payable_amount, baseline_uid, created_at, expires_at, redirect_url, note))
-        db.commit()
+    with db_lock:
+        with get_db() as db:
+            try:
+                payable_dec = allocate_payable_amount_in_db(db, base_dec)
+            except AmountConflictError as e:
+                return jsonify({"success": False, "error": {"code": "AMOUNT_BUSY", "message": str(e)}}), 409
 
-    payment_url = f"{get_base_url()}/pay/{order_id}"
+            db.execute("""
+                INSERT INTO orders (id, source, base_amount, payable_amount, status, baseline_uid, created_at, expires_at, redirect_url, note)
+                VALUES (?, 'link', ?, ?, 'pending', ?, ?, ?, ?, ?)
+            """, (order_id, float(base_dec), float(payable_dec), baseline_uid, created_at, expires_at, redirect_url, note))
+            db.commit()
+
     return jsonify({
         "success": True,
         "order_id": order_id,
-        "payment_url": payment_url,
-        "base_amount": base_amount,
-        "payable_amount": payable_amount,
+        "payment_url": f"{get_base_url()}/pay/{order_id}",
+        "base_amount": float(base_dec),
+        "payable_amount": float(payable_dec),
+        "base_amount_str": f"{base_dec:.2f}",
+        "payable_amount_str": f"{payable_dec:.2f}",
         "expires_at": expires_at
     })
 
@@ -2189,10 +2364,9 @@ def api_admin_export_csv():
     csv_lines = ["Order ID,Source,Base Amount,Payable Amount,Status,UTR,Transaction ID,Created At,Expires At,Paid At,Note"]
     for r in rows:
         note_clean = (r["note"] or "").replace('"', '""')
-        csv_lines.append(f'"{r["id"]}","{r["source"]}","{r["base_amount"]}","{r["payable_amount"]}","{r["status"]}","{r["utr"] or ""}","{r["txn_id"] or ""}","{r["created_at"]}","{r["expires_at"]}","{r["paid_at"] or ""}","{note_clean}"')
+        csv_lines.append(f'"{r["id"]}","{r["source"]}","{format_amount_str(r["base_amount"])}","{format_amount_str(r["payable_amount"])}","{r["status"]}","{r["utr"] or ""}","{r["txn_id"] or ""}","{r["created_at"]}","{r["expires_at"]}","{r["paid_at"] or ""}","{note_clean}"')
 
-    output = "\n".join(csv_lines)
-    resp = make_response(output)
+    resp = make_response("\n".join(csv_lines))
     resp.headers.set("Content-Type", "text/csv")
     resp.headers.set("Content-Disposition", f'attachment; filename="orders-{datetime.now().strftime("%Y%m%d%H%M%S")}.csv"')
     return resp
@@ -2212,7 +2386,7 @@ def api_admin_verify_logs():
     return jsonify({"success": True, "logs": [dict(r) for r in rows]})
 
 # ==============================================================================
-# DASHBOARD API KEYS & WEBHOOK SETTINGS (Section 4.5)
+# API KEYS & WEBHOOKS MANAGEMENT
 # ==============================================================================
 @app.route("/api/admin/keys", methods=["GET"])
 @require_admin
@@ -2228,49 +2402,27 @@ def api_admin_create_key():
         return csrf_error_response()
 
     if not is_gateway_configured():
-        return jsonify({
-            "success": False,
-            "error": {
-                "code": "NOT_CONFIGURED",
-                "message": "Connect your UPI ID and Gmail first."
-            }
-        }), 409
+        return jsonify({"success": False, "error": {"code": "NOT_CONFIGURED", "message": "Connect your UPI ID and Gmail first."}}), 409
 
     data = request.get_json(silent=True) or {}
     key_name = data.get("name", "").strip() or "Default Key"
-
-    # Generate key format: upi_live_<32 hex chars>
-    secret_part = secrets.token_hex(20)
-    plain_key = f"upi_live_{secret_part}"
+    plain_key = f"upi_live_{secrets.token_hex(20)}"
     prefix = plain_key[:12] + "..."
     key_hash = hashlib.sha256(plain_key.encode()).hexdigest()
 
     with get_db() as db:
         cur = db.cursor()
-        cur.execute("""
-            INSERT INTO api_keys (key_hash, prefix, name, created_at, revoked)
-            VALUES (?, ?, ?, ?, 0)
-        """, (key_hash, prefix, key_name, iso_now()))
+        cur.execute("INSERT INTO api_keys (key_hash, prefix, name, created_at, revoked) VALUES (?, ?, ?, ?, 0)", (key_hash, prefix, key_name, iso_now()))
         db.commit()
         key_id = cur.lastrowid
 
-    # The raw key is returned ONCE
-    return jsonify({
-        "success": True,
-        "key": {
-            "id": key_id,
-            "name": key_name,
-            "prefix": prefix,
-            "plain_key": plain_key
-        }
-    })
+    return jsonify({"success": True, "key": {"id": key_id, "name": key_name, "prefix": prefix, "plain_key": plain_key}})
 
 @app.route("/api/admin/keys/<int:key_id>/revoke", methods=["POST"])
 @require_admin
 def api_admin_revoke_key(key_id):
     if not verify_csrf():
         return csrf_error_response()
-
     with get_db() as db:
         db.execute("UPDATE api_keys SET revoked = 1 WHERE id = ?", (key_id,))
         db.commit()
@@ -2317,106 +2469,7 @@ def api_admin_ai_prompt():
                 key_str = f"{k['prefix']} (insert full key)"
 
     sec_str = WEBHOOK_SECRET if include_secret else "YOUR_WEBHOOK_SECRET"
-    prompt = generate_ai_prompt_text(stack, key_str, sec_str)
-    return jsonify({"success": True, "prompt": prompt})
-
-# ==============================================================================
-# TEST / SIMULATION ENDPOINT (Section 4 & 7)
-# ==============================================================================
-@app.route("/api/admin/simulate-email", methods=["POST"])
-@require_admin
-def api_admin_simulate_email():
-    """
-    Allows the admin to simulate an incoming bank/FamApp email notification
-    to test matching, status transitions, QR animations, and webhooks live.
-    """
-    if not verify_csrf():
-        return csrf_error_response()
-
-    check_order_expiries()
-    data = request.get_json(silent=True) or {}
-    email_text = data.get("email_text", "").strip()
-
-    if email_text:
-        parsed = parse_famapp_email("Payment Received", email_text, {})
-        if not parsed:
-            return jsonify({"success": False, "error": {"code": "PARSE_FAILED", "message": "Could not parse email text. Check format."}}), 400
-        amount = parsed["amount"]
-        utr = parsed["utr"] or f"SIM_{secrets.token_hex(6).upper()}"
-        txn_id = parsed["txn_id"]
-        sender_name = parsed["sender_name"]
-    else:
-        try:
-            amount = float(Decimal(str(data.get("amount", 0))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-            utr = data.get("utr", f"SIM_{secrets.token_hex(6).upper()}")
-            txn_id = data.get("txn_id", f"FMP_{secrets.token_hex(5).upper()}")
-            sender_name = data.get("sender_name", "Test Customer")
-        except Exception:
-            return jsonify({"success": False, "error": {"code": "INVALID_PARAM", "message": "Invalid amount"}}), 400
-
-    now_time = iso_now()
-    sim_msg_id = f"SIM_{secrets.token_hex(12)}"
-    with db_lock:
-        with get_db() as db:
-            if db.execute("SELECT id FROM orders WHERE utr = ?", (utr,)).fetchone():
-                record_verify_log(db, None, 0, sim_msg_id, amount, utr, "rejected", "duplicate UTR (simulated)")
-                db.commit()
-                return jsonify({"success": False, "error": {"code": "DUPLICATE_UTR", "message": "Duplicate UTR already recorded"}}), 409
-
-            matched_order = db.execute("""
-                SELECT * FROM orders
-                WHERE status = 'pending' AND ABS(payable_amount - ?) < 0.005
-                ORDER BY created_at ASC
-                LIMIT 1
-            """, (amount,)).fetchone()
-
-            if matched_order:
-                cur = db.execute("""
-                    UPDATE orders
-                    SET status = 'paid', utr = ?, txn_id = ?, paid_at = ?
-                    WHERE id = ? AND status = 'pending'
-                """, (utr, txn_id, now_time, matched_order["id"]))
-                if cur.rowcount == 1:
-                    db.execute("""
-                        INSERT INTO processed_emails (message_id, uid, sender, subject, received_at, matched_order_id, amount, utr)
-                        VALUES (?, NULL, 'simulate@famapp.in', 'Simulated Email', ?, ?, ?, ?)
-                    """, (sim_msg_id, now_time, matched_order["id"], amount, utr))
-                    record_verify_log(db, matched_order["id"], 0, sim_msg_id, amount, utr, "matched", "verified payment (simulated)")
-                    db.commit()
-
-                    if matched_order["callback_url"]:
-                        dispatch_webhook_async(
-                            order_id=matched_order["id"],
-                            status="paid",
-                            amount=matched_order["payable_amount"],
-                            base_amount=matched_order["base_amount"],
-                            utr=utr,
-                            txn_id=txn_id,
-                            paid_at=now_time,
-                            note=matched_order["note"],
-                            callback_url=matched_order["callback_url"]
-                        )
-
-                    return jsonify({
-                        "success": True,
-                        "matched": True,
-                        "order_id": matched_order["id"],
-                        "amount": amount,
-                        "utr": utr,
-                        "message": f"Successfully verified order {matched_order['id']} for ₹{amount:.2f}"
-                    })
-
-            record_unmatched_payment(db, amount, sender_name, utr, txn_id, now_time, sim_msg_id, "Simulated unmatched email", "No pending order matching amount")
-            record_verify_log(db, None, 0, sim_msg_id, amount, utr, "unmatched", "amount mismatch (simulated)")
-            db.commit()
-
-            return jsonify({
-                "success": True,
-                "matched": False,
-                "amount": amount,
-                "utr": utr,
-                "message": f"Recorded as unmatched payment: No pending order found with payable amount ₹{amount:.2f}"
-            })
+    return jsonify({"success": True, "prompt": generate_ai_prompt_text(stack, key_str, sec_str)})
 
 # ==============================================================================
 # APPLICATION INITIALIZATION ON IMPORT & RUN
@@ -2425,5 +2478,5 @@ init_db()
 start_background_worker_once()
 
 if __name__ == "__main__":
-    print(f"[*] Personal UPI Gateway running on http://{HOST}:{PORT}")
+    print(f"[*] MinorUPI Gateway running on http://{HOST}:{PORT}")
     app.run(host=HOST, port=PORT, debug=False)
