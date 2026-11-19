@@ -258,6 +258,28 @@
       font-weight: 700;
       color: #64748b;
     }
+    #checkout .co-total-row.is-unpaid-terminal .co-currency,
+    #checkout .co-total-row.is-unpaid-terminal .co-amount {
+      color: #64748b;
+      text-decoration: line-through;
+      text-decoration-thickness: 2px;
+      text-decoration-color: rgba(100, 116, 139, 0.55);
+    }
+    #checkout .co-total-row.is-unpaid-terminal .co-inr {
+      color: #94a3b8;
+    }
+    #checkout .co-not-paid-chip {
+      margin-left: auto;
+      background: rgba(245, 158, 11, 0.14);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      color: #b45309;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 2px 7px;
+      border-radius: 9999px;
+    }
     #checkout .co-offset-note {
       margin-top: 3px;
       display: inline-block;
@@ -436,13 +458,27 @@
       50% { opacity: 0.35; transform: scale(0.7); }
     }
 
-    /* Animated Terminal Overlays */
+    #checkout .co-qr-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: opacity 0.28s ease, filter 0.28s ease, transform 0.28s ease;
+    }
+    #checkout .co-qr-wrap.is-fading-out {
+      opacity: 0;
+      filter: blur(8px);
+      transform: scale(0.96);
+    }
+
+    /* Animated Terminal Overlays (Zero layout jump, < 1.2s staggered motion) */
     #checkout .co-state-box {
       width: 100%;
-      background: #ffffff;
+      min-height: 214px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.94));
+      backdrop-filter: blur(8px);
       border: 1px solid #cbd5e1;
       border-radius: 13px;
-      padding: 18px 12px;
+      padding: 18px 14px;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -451,15 +487,22 @@
       position: relative;
       overflow: hidden;
     }
+    #checkout .co-state-box.is-entering {
+      animation: coStateBackdropIn 0.34s ease forwards;
+    }
+    @keyframes coStateBackdropIn {
+      from { opacity: 0; transform: scale(0.97); }
+      to { opacity: 1; transform: scale(1); }
+    }
     #checkout .co-blur-backdrop {
       position: absolute;
       inset: 0;
       background-image:
-        linear-gradient(90deg, rgba(15, 23, 42, 0.08) 25%, transparent 25%),
-        linear-gradient(rgba(15, 23, 42, 0.08) 25%, transparent 25%);
+        linear-gradient(90deg, rgba(15, 23, 42, 0.07) 25%, transparent 25%),
+        linear-gradient(rgba(15, 23, 42, 0.07) 25%, transparent 25%);
       background-size: 16px 16px;
       filter: blur(4px);
-      opacity: 0.45;
+      opacity: 0.4;
       pointer-events: none;
     }
     #checkout .co-state-content {
@@ -468,121 +511,194 @@
       display: flex;
       flex-direction: column;
       align-items: center;
+      width: 100%;
     }
-    #checkout .co-sparkle-wrap {
+    #checkout .co-badge-ring {
       position: relative;
-      width: 72px;
-      height: 72px;
+      width: 64px;
+      height: 64px;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 8px;
+      margin-bottom: 10px;
     }
-    #checkout .co-sparkle {
+    #checkout .co-ring-svg {
       position: absolute;
-      width: 12px;
-      height: 12px;
-      fill: #10b981;
-      animation: coSparkle 1.4s ease-out infinite alternate;
+      inset: 0;
+      width: 64px;
+      height: 64px;
+      transform: rotate(-90deg);
     }
-    #checkout .co-sparkle.s1 { top: 0; right: 2px; animation-delay: 0s; }
-    #checkout .co-sparkle.s2 { bottom: 4px; left: 0; width: 9px; height: 9px; animation-delay: 0.35s; }
-    #checkout .co-sparkle.s3 { top: 8px; left: 2px; width: 8px; height: 8px; fill: #34d399; animation-delay: 0.7s; }
-    @keyframes coSparkle {
-      0% { transform: scale(0.6) rotate(0deg); opacity: 0.4; }
-      100% { transform: scale(1.15) rotate(20deg); opacity: 1; }
+    #checkout .co-ring-track {
+      fill: none;
+      stroke-width: 3.5;
+      opacity: 0.22;
     }
-    #checkout .co-circle-paid {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      background: rgba(16, 185, 129, 0.14);
-      border: 3px solid #10b981;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      animation: coPop 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    }
-    #checkout .co-circle-paid svg {
-      width: 30px;
-      height: 30px;
-      stroke: #10b981;
+    #checkout .co-ring-progress {
+      fill: none;
       stroke-width: 3.5;
       stroke-linecap: round;
-      stroke-linejoin: round;
-      fill: none;
-      stroke-dasharray: 56;
-      stroke-dashoffset: 56;
-      animation: coDrawTick 0.6s 0.15s ease forwards;
+      stroke-dasharray: 176;
+      stroke-dashoffset: 176;
+      animation: coDrawRing 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    @keyframes coDrawRing {
+      to { stroke-dashoffset: 0; }
+    }
+    #checkout .co-ring-inner {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: coIconBounce 0.38s 0.14s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+    }
+    @keyframes coIconBounce {
+      0% { transform: scale(0.45); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    /* Expired Styling & Hourglass Tilt */
+    #checkout .co-ring-expired-glow {
+      border-radius: 50%;
+      box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.28);
+      animation: coIdleAmber 2.8s 1.1s ease-in-out infinite;
+    }
+    @keyframes coIdleAmber {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.22); }
+      50% { box-shadow: 0 0 0 7px rgba(245, 158, 11, 0); }
+    }
+    #checkout .co-hourglass-anim {
+      animation: coHourglassTilt 0.55s 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    @keyframes coHourglassTilt {
+      0% { transform: rotate(0deg); }
+      45% { transform: rotate(192deg); }
+      75% { transform: rotate(174deg); }
+      100% { transform: rotate(180deg); }
+    }
+
+    /* Paid Check & Sparkles */
+    #checkout .co-sparkle {
+      position: absolute;
+      width: 11px;
+      height: 11px;
+      fill: #10b981;
+      opacity: 0;
+      animation: coSparkleBurst 0.65s 0.35s ease-out forwards;
+    }
+    #checkout .co-sparkle.s1 { top: -3px; right: -2px; }
+    #checkout .co-sparkle.s2 { bottom: 0; left: -4px; width: 9px; height: 9px; animation-delay: 0.42s; }
+    #checkout .co-sparkle.s3 { top: 4px; left: -3px; width: 8px; height: 8px; fill: #34d399; animation-delay: 0.48s; }
+    @keyframes coSparkleBurst {
+      0% { transform: scale(0.3) rotate(0deg); opacity: 0; }
+      50% { transform: scale(1.2) rotate(20deg); opacity: 1; }
+      100% { transform: scale(0.9) rotate(35deg); opacity: 0.75; }
+    }
+    #checkout .co-draw-tick {
+      stroke-dasharray: 42;
+      stroke-dashoffset: 42;
+      animation: coDrawTick 0.42s 0.28s ease-out forwards;
     }
     @keyframes coDrawTick { to { stroke-dashoffset: 0; } }
-    @keyframes coPop { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 
-    #checkout .co-circle-expired {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      background: #f1f5f9;
-      border: 3px solid #94a3b8;
-      color: #64748b;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 8px;
-      animation: coGentleShake 1.8s ease-in-out infinite;
+    /* Cancelled & Failed Cross Animations */
+    #checkout .co-draw-cross {
+      stroke-dasharray: 28;
+      stroke-dashoffset: 28;
+      animation: coDrawTick 0.36s 0.25s ease-out forwards;
     }
-    @keyframes coGentleShake {
-      0%, 100% { transform: rotate(0deg); }
-      20% { transform: rotate(-6deg); }
-      40% { transform: rotate(6deg); }
-      60% { transform: rotate(-3deg); }
-      80% { transform: rotate(0deg); }
-    }
-
-    #checkout .co-circle-cancelled {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      background: rgba(245, 158, 11, 0.12);
-      border: 3px solid #d97706;
-      color: #d97706;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 8px;
-      animation: coPop 0.4s ease;
-    }
-    #checkout .co-circle-failed {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      background: rgba(239, 68, 68, 0.12);
-      border: 3px solid #ef4444;
-      color: #ef4444;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 8px;
-      animation: coFailShake 0.48s ease;
+    #checkout .co-fail-shake {
+      animation: coFailShake 0.45s 0.35s ease both;
     }
     @keyframes coFailShake {
       0%, 100% { transform: translateX(0); }
-      20% { transform: translateX(-6px); }
-      40% { transform: translateX(6px); }
-      60% { transform: translateX(-4px); }
-      80% { transform: translateX(4px); }
+      20% { transform: translateX(-5px); }
+      40% { transform: translateX(5px); }
+      60% { transform: translateX(-3px); }
+      80% { transform: translateX(3px); }
     }
-    #checkout .co-utr-chip {
-      margin-top: 8px;
+
+    #checkout .co-state-title {
+      font-size: 16px;
+      font-weight: 800;
+      margin-bottom: 3px;
+      animation: coSlideUpFade 0.32s 0.22s ease both;
+    }
+    #checkout .co-state-sub {
+      font-size: 12px;
+      color: #64748b;
+      line-height: 1.4;
+      max-width: 260px;
+      animation: coFadeOnly 0.32s 0.34s ease both;
+    }
+    #checkout .co-state-chip {
+      margin-top: 9px;
+      border-radius: 7px;
+      padding: 3px 9px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+      animation: coFadeOnly 0.3s 0.44s ease both;
+    }
+    #checkout .co-chip-paid {
       background: rgba(16, 185, 129, 0.12);
       border: 1px solid rgba(16, 185, 129, 0.32);
       color: #065f46;
-      border-radius: 8px;
-      padding: 4px 10px;
-      font-family: var(--font-mono);
-      font-size: 11.5px;
-      font-weight: 700;
-      overflow-wrap: anywhere;
+    }
+    #checkout .co-chip-expired {
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.32);
+      color: #92400e;
+    }
+    #checkout .co-chip-cancelled {
+      background: rgba(100, 116, 139, 0.12);
+      border: 1px solid rgba(100, 116, 139, 0.28);
+      color: #475569;
+    }
+    #checkout .co-chip-failed {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.28);
+      color: #991b1b;
+    }
+    #checkout .co-merchant-back-wrap {
+      margin-top: 10px;
+      width: 100%;
+      animation: coFadeOnly 0.3s 0.48s ease both;
+    }
+    @keyframes coSlideUpFade {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes coFadeOnly {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #checkout .co-qr-wrap,
+      #checkout .co-state-box.is-entering,
+      #checkout .co-ring-progress,
+      #checkout .co-ring-inner,
+      #checkout .co-ring-expired-glow,
+      #checkout .co-hourglass-anim,
+      #checkout .co-sparkle,
+      #checkout .co-draw-tick,
+      #checkout .co-draw-cross,
+      #checkout .co-fail-shake,
+      #checkout .co-state-title,
+      #checkout .co-state-sub,
+      #checkout .co-state-chip,
+      #checkout .co-merchant-back-wrap,
+      #checkout .co-pulse-dot,
+      #app .view {
+        animation: none !important;
+        transition: opacity 0.2s ease !important;
+        transform: none !important;
+        stroke-dashoffset: 0 !important;
+      }
     }
 
     @media (max-height: 620px) {
@@ -595,6 +711,7 @@
       #checkout .co-qr-frame { padding: 7px; }
       #checkout .co-qr-img { width: min(46vw, 25dvh); }
       #checkout .co-qr-caption { margin-top: 5px; }
+      #checkout .co-state-box { min-height: 186px; padding: 14px 12px; }
       #checkout .co-actions { margin-top: 7px; gap: 7px; }
       #checkout .co-btn-save, #checkout .co-btn-pay { min-height: 33px; font-size: 12px; }
       #checkout .co-meta-list { margin-top: 7px; }
@@ -1293,10 +1410,31 @@
       white-space: nowrap;
     }
     #app .badge-paid, #app .badge-matched { background: var(--success-bg); color: var(--success); }
-    #app .badge-pending { background: rgba(22, 68, 184, 0.12); color: var(--primary); }
-    #app .badge-expired, #app .badge-ignored { background: rgba(148, 163, 184, 0.16); color: var(--text-muted); }
-    #app .badge-cancelled, #app .badge-unmatched { background: var(--warning-bg); color: var(--warning); }
+    #app .badge-pending { background: rgba(22, 68, 184, 0.14); color: var(--primary); }
+    html.dark #app .badge-pending { background: rgba(59, 130, 246, 0.18); color: #60a5fa; }
+    #app .badge-expired, #app .badge-unmatched { background: var(--warning-bg); color: var(--warning); }
+    #app .badge-cancelled, #app .badge-ignored { background: rgba(148, 163, 184, 0.18); color: var(--text-muted); }
     #app .badge-failed, #app .badge-rejected { background: var(--danger-bg); color: var(--danger); }
+
+    #app .view:not([hidden]) {
+      animation: viewSlideIn 0.18s ease-out;
+    }
+    @keyframes viewSlideIn {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    #app .pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: var(--s-2);
+      margin-top: var(--s-3);
+      padding-top: var(--s-3);
+      border-top: 1px solid var(--border-color);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
 
     #app .empty-state-box {
       padding: var(--s-4);
@@ -1521,10 +1659,11 @@
 
         <div class="co-total-block">
           <div class="co-total-label">ORDER TOTAL</div>
-          <div class="co-total-row">
+          <div id="co-total-row" class="co-total-row">
             <span class="co-currency">₹</span>
             <span id="co-amount" class="co-amount">0.00</span>
             <span class="co-inr">INR</span>
+            <span id="co-not-paid-chip" class="co-not-paid-chip" hidden>Not paid</span>
           </div>
           <div id="co-offset-note" class="co-offset-note" hidden>
             Pay exactly ₹<span id="co-offset-exact">0.00</span>
@@ -1533,26 +1672,34 @@
 
         <div class="co-inner-panel">
           <div class="co-qr-stage">
-            <div id="co-qr-frame" class="co-qr-frame">
-              <img id="co-qr-img" class="co-qr-img" src="" alt="UPI Payment QR">
+            <div id="co-qr-wrap" class="co-qr-wrap">
+              <div id="co-qr-frame" class="co-qr-frame">
+                <img id="co-qr-img" class="co-qr-img" src="" alt="UPI Payment QR">
+              </div>
+              <div id="co-qr-caption" class="co-qr-caption">SCAN WITH ANY UPI APP</div>
             </div>
-            <div id="co-qr-caption" class="co-qr-caption">SCAN WITH ANY UPI APP</div>
 
             <!-- Paid Animation -->
             <div id="co-state-paid" class="co-state-box" hidden>
               <div class="co-state-content">
-                <div class="co-sparkle-wrap">
+                <div class="co-badge-ring">
+                  <svg class="co-ring-svg" viewBox="0 0 64 64">
+                    <circle class="co-ring-track" cx="32" cy="32" r="28" stroke="#10b981"/>
+                    <circle class="co-ring-progress" cx="32" cy="32" r="28" stroke="#10b981"/>
+                  </svg>
                   <svg class="co-sparkle s1" viewBox="0 0 24 24"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5Z"/></svg>
                   <svg class="co-sparkle s2" viewBox="0 0 24 24"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5Z"/></svg>
                   <svg class="co-sparkle s3" viewBox="0 0 24 24"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5Z"/></svg>
-                  <div class="co-circle-paid">
-                    <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  <div class="co-ring-inner" style="background: rgba(16, 185, 129, 0.14); color: #10b981;">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline class="co-draw-tick" points="20 6 9 17 4 12"></polyline>
+                    </svg>
                   </div>
                 </div>
-                <div style="font-size: 16px; font-weight: 800; color: #059669; margin-bottom: 2px;">Payment Successful</div>
-                <div style="font-size: 12px; color: #64748b;">Amount verified</div>
-                <div class="co-utr-chip">UTR: <span id="co-paid-utr"></span></div>
-                <div id="co-redirect-countdown" style="font-size: 11px; color: #94a3b8; margin-top: 8px;" hidden>Redirecting in 3 seconds...</div>
+                <div class="co-state-title" style="color: #059669;">Payment Successful</div>
+                <div class="co-state-sub">Payment received and verified automatically.</div>
+                <div class="co-state-chip co-chip-paid">UTR: <span id="co-paid-utr"></span></div>
+                <div id="co-redirect-countdown" style="font-size: 11px; color: #64748b; margin-top: 7px;" hidden>Redirecting in 3 seconds...</div>
               </div>
             </div>
 
@@ -1560,56 +1707,98 @@
             <div id="co-state-expired" class="co-state-box" hidden>
               <div class="co-blur-backdrop"></div>
               <div class="co-state-content">
-                <div class="co-circle-expired">
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M5 22h14"/><path d="M5 2h14"/>
-                    <path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/>
-                    <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>
+                <div class="co-badge-ring co-ring-expired-glow">
+                  <svg class="co-ring-svg" viewBox="0 0 64 64">
+                    <defs>
+                      <linearGradient id="coExpGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#f59e0b"/>
+                        <stop offset="100%" stop-color="#ea580c"/>
+                      </linearGradient>
+                    </defs>
+                    <circle class="co-ring-track" cx="32" cy="32" r="28" stroke="#f59e0b"/>
+                    <circle class="co-ring-progress" cx="32" cy="32" r="28" stroke="url(#coExpGrad)"/>
                   </svg>
+                  <div class="co-ring-inner" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(234, 88, 12, 0.14)); color: #d97706;">
+                    <svg class="co-hourglass-anim" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M5 22h14"/><path d="M5 2h14"/>
+                      <path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/>
+                      <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>
+                    </svg>
+                  </div>
                 </div>
-                <div style="font-size: 15px; font-weight: 800; color: #475569; margin-bottom: 3px;">Payment Expired</div>
-                <div style="font-size: 12px; color: #64748b;">This link has expired. Please request a new payment link.</div>
+                <div class="co-state-title" style="color: #c2410c;">Payment Expired</div>
+                <div class="co-state-sub">This payment link is no longer active. Please request a new payment link.</div>
+                <div class="co-state-chip co-chip-expired">Order: <span id="co-exp-order-chip"></span></div>
               </div>
             </div>
 
             <!-- Cancelled Animation -->
             <div id="co-state-cancelled" class="co-state-box" hidden>
+              <div class="co-blur-backdrop"></div>
               <div class="co-state-content">
-                <div class="co-circle-cancelled">
-                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
-                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                <div class="co-badge-ring">
+                  <svg class="co-ring-svg" viewBox="0 0 64 64">
+                    <circle class="co-ring-track" cx="32" cy="32" r="28" stroke="#64748b"/>
+                    <circle class="co-ring-progress" cx="32" cy="32" r="28" stroke="#64748b"/>
                   </svg>
+                  <div class="co-ring-inner" style="background: rgba(100, 116, 139, 0.14); color: #475569;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round">
+                      <line class="co-draw-cross" x1="18" y1="6" x2="6" y2="18"/>
+                      <line class="co-draw-cross" x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </div>
                 </div>
-                <div style="font-size: 15px; font-weight: 800; color: #b45309; margin-bottom: 3px;">Payment Cancelled</div>
-                <div style="font-size: 12px; color: #64748b;">This payment request was cancelled.</div>
+                <div class="co-state-title" style="color: #475569;">Payment Cancelled</div>
+                <div class="co-state-sub">This payment request was cancelled by the merchant.</div>
+                <div class="co-state-chip co-chip-cancelled">Order: <span id="co-can-order-chip"></span></div>
               </div>
             </div>
 
             <!-- Failed Animation -->
             <div id="co-state-failed" class="co-state-box" hidden>
+              <div class="co-blur-backdrop"></div>
               <div class="co-state-content">
-                <div class="co-circle-failed">
-                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
-                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                <div class="co-badge-ring co-fail-shake">
+                  <svg class="co-ring-svg" viewBox="0 0 64 64">
+                    <circle class="co-ring-track" cx="32" cy="32" r="28" stroke="#ef4444"/>
+                    <circle class="co-ring-progress" cx="32" cy="32" r="28" stroke="#ef4444"/>
                   </svg>
+                  <div class="co-ring-inner" style="background: rgba(239, 68, 68, 0.14); color: #dc2626;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round">
+                      <line class="co-draw-cross" x1="18" y1="6" x2="6" y2="18"/>
+                      <line class="co-draw-cross" x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </div>
                 </div>
-                <div style="font-size: 15px; font-weight: 800; color: #dc2626; margin-bottom: 3px;">Payment Failed</div>
-                <div id="co-fail-reason" style="font-size: 12px; color: #ef4444;">Verification could not be completed.</div>
+                <div class="co-state-title" style="color: #dc2626;">Payment Failed</div>
+                <div id="co-fail-reason" class="co-state-sub">Verification could not be completed.</div>
+                <div class="co-state-chip co-chip-failed">Order: <span id="co-fail-order-chip"></span></div>
               </div>
             </div>
 
             <!-- Unavailable Animation -->
             <div id="co-state-unavailable" class="co-state-box" hidden>
+              <div class="co-blur-backdrop"></div>
               <div class="co-state-content">
-                <div class="co-circle-cancelled">
-                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                <div class="co-badge-ring">
+                  <svg class="co-ring-svg" viewBox="0 0 64 64">
+                    <circle class="co-ring-track" cx="32" cy="32" r="28" stroke="#d97706"/>
+                    <circle class="co-ring-progress" cx="32" cy="32" r="28" stroke="#d97706"/>
                   </svg>
+                  <div class="co-ring-inner" style="background: rgba(245, 158, 11, 0.14); color: #d97706;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                      <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                  </div>
                 </div>
-                <div style="font-size: 15px; font-weight: 800; color: #b45309; margin-bottom: 3px;">Gateway Unavailable</div>
-                <div id="co-unavailable-reason" style="font-size: 12px; color: #64748b;">Merchant is not configured / temporarily unavailable.</div>
+                <div class="co-state-title" style="color: #b45309;">Gateway Unavailable</div>
+                <div id="co-unavailable-reason" class="co-state-sub">Merchant is not configured / temporarily unavailable.</div>
               </div>
+            </div>
+
+            <div id="co-merchant-back-wrap" class="co-merchant-back-wrap" hidden>
+              <a id="co-btn-merchant-back" href="#" class="co-btn-save" style="width: 100%;">Back to merchant</a>
             </div>
           </div>
 
@@ -1654,6 +1843,10 @@
               <span class="co-meta-label">Verification</span>
               <span id="co-verification-pill" class="co-verify-pill">
                 <span id="co-pulse-dot" class="co-pulse-dot"></span>
+                <svg id="co-clock-dot" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" hidden>
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
                 <span id="co-verification-text">Waiting for payment...</span>
               </span>
             </div>
@@ -2016,7 +2209,8 @@
             <p>Orders, verification log decisions, and unmatched credits.</p>
           </div>
           <div class="page-header-actions">
-            <select id="filter-status" class="form-control" style="width: auto; min-width: 130px; min-height: 36px; padding: 5px 10px;" onchange="loadTransactions()">
+            <input type="search" id="filter-search" class="form-control" placeholder="Search Order ID, UTR, note..." style="flex: 1 1 180px; min-height: 36px; padding: 5px 10px; font-size: 13px;">
+            <select id="filter-status" class="form-control" style="width: auto; min-width: 130px; min-height: 36px; padding: 5px 10px;" onchange="loadTransactions(1)">
               <option value="">All Statuses</option>
               <option value="paid">Paid</option>
               <option value="pending">Pending</option>
@@ -2055,6 +2249,13 @@
               <div id="transactions-empty-state" class="empty-state-box" hidden>
                 <div class="empty-state-title">No Transactions Found</div>
                 <p class="empty-state-text" style="margin-bottom: 0;">Orders created via payment links or API appear here.</p>
+              </div>
+            </div>
+            <div id="tx-pagination" class="pagination-bar" hidden>
+              <span id="tx-page-info">Page 1 of 1</span>
+              <div style="display: flex; gap: 8px;">
+                <button type="button" id="tx-prev-btn" class="btn btn-secondary btn-sm" onclick="loadTransactions(txCurrentPage - 1)">← Prev</button>
+                <button type="button" id="tx-next-btn" class="btn btn-secondary btn-sm" onclick="loadTransactions(txCurrentPage + 1)">Next →</button>
               </div>
             </div>
           </div>
@@ -2242,6 +2443,12 @@
               <h4>GET /api/v1/orders/{order_id}</h4>
               <div class="code-box"><button class="copy-btn-code" onclick="copySnippet(this)">Copy</button><pre>GET /api/v1/orders/ORD_1001
 Authorization: Bearer &lt;YOUR_API_KEY&gt;</pre></div>
+              <h4>GET /api/v1/orders (List Orders)</h4>
+              <div class="code-box"><button class="copy-btn-code" onclick="copySnippet(this)">Copy</button><pre>GET /api/v1/orders?status=paid&amp;page=1&amp;limit=20
+Authorization: Bearer &lt;YOUR_API_KEY&gt;</pre></div>
+              <h4>POST /api/v1/orders/{order_id}/cancel</h4>
+              <div class="code-box"><button class="copy-btn-code" onclick="copySnippet(this)">Copy</button><pre>POST /api/v1/orders/ORD_1001/cancel
+Authorization: Bearer &lt;YOUR_API_KEY&gt;</pre></div>
             </div>
           </details>
 
@@ -2266,12 +2473,37 @@ print(r.json()["data"]["payment_url"])</pre></div>
   body: JSON.stringify({ amount: 1.00, callback_url: "https://yoursite.com/webhook" })
 });
 const { data } = await res.json();</pre></div>
+              <h4>PHP</h4>
+              <div class="code-box"><button class="copy-btn-code" onclick="copySnippet(this)">Copy</button><pre>$ch = curl_init("https://YOUR_GATEWAY/api/v1/orders");
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    "Content-Type: application/json",
+    "Authorization: Bearer YOUR_API_KEY"
+]);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+    "amount" => 1.00,
+    "callback_url" => "https://yoursite.com/webhook.php"
+]));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+$response = json_decode(curl_exec($ch), true);
+$payment_url = $response['data']['payment_url'];</pre></div>
             </div>
           </details>
 
           <details id="doc-webhooks" class="doc-section">
             <summary><span>5. Webhooks &amp; HMAC-SHA256</span><span class="doc-chevron">▼</span></summary>
             <div class="doc-body">
+              <p>MinorUPI sends a <code style="font-family: var(--font-mono);">POST</code> JSON payload with an <code style="font-family: var(--font-mono);">X-Signature</code> HMAC-SHA256 hex header and retries 3 times on failure.</p>
+              <div class="code-box"><button class="copy-btn-code" onclick="copySnippet(this)">Copy</button><pre>{
+  "order_id": "ORD-12345678",
+  "status": "paid",
+  "amount": 1.0,
+  "base_amount": 1.0,
+  "utr": "412345678901",
+  "txn_id": "TXN_412345678901",
+  "paid_at": "2026-11-18T12:00:00+00:00",
+  "created_at": "2026-11-18T12:00:01+00:00",
+  "note": "Order #1001"
+}</pre></div>
               <div class="code-box"><button class="copy-btn-code" onclick="copySnippet(this)">Copy</button><pre>import hmac, hashlib
 expected = hmac.new(WEBHOOK_SECRET.encode(), raw_body, hashlib.sha256).hexdigest()
 valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</pre></div>
@@ -2461,6 +2693,9 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
     let paymentsChartInstance = null;
     let pendingConfirmResolve = null;
     let serverOffsetMs = 0;
+    let currentActiveTab = 'dashboard';
+    let txCurrentPage = 1;
+    let txSearchTimeout = null;
 
     // Checkout State
     let coOrderId = null;
@@ -2470,6 +2705,38 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
     let coTargetEndMs = null;
     let coStatus = 'pending';
     let coRedirectScheduled = false;
+    let coHasShownQr = false;
+    let coTransitionTimer = null;
+    let coIsTransitioning = false;
+
+    function safeGetSession(key) {
+      try { return window.sessionStorage.getItem(key); } catch (e) { return null; }
+    }
+    function safeSetSession(key, val) {
+      try {
+        if (val === null || val === undefined) window.sessionStorage.removeItem(key);
+        else window.sessionStorage.setItem(key, String(val));
+      } catch (e) {}
+    }
+    function readAndClearIntentCookie() {
+      try {
+        const m = document.cookie.match(/(?:^|;\s*)mupi_intent_tab=([^;]+)/);
+        if (m && m[1]) {
+          document.cookie = 'mupi_intent_tab=; Max-Age=0; path=/';
+          return decodeURIComponent(m[1]);
+        }
+      } catch (e) {}
+      return null;
+    }
+    function isSafeHttpUrl(url) {
+      if (!url || typeof url !== 'string') return false;
+      try {
+        const u = new URL(url, window.location.origin);
+        return u.protocol === 'http:' || u.protocol === 'https:';
+      } catch (e) {
+        return false;
+      }
+    }
 
     function showToast(message, type = 'info') {
       const container = document.getElementById('toast-container');
@@ -2504,7 +2771,7 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
     }
 
     /* ========================================================================
-       CHECKOUT MODE LOGIC (/pay/<order_id>)
+       CHECKOUT MODE LOGIC (/pay/<order_id>) — ANIMATED TERMINAL STATES
        ======================================================================== */
     function coSyncServerClock(serverNowIso, expiresAtIso, remainingSeconds) {
       const sMs = serverNowIso ? Date.parse(serverNowIso) : NaN;
@@ -2518,48 +2785,136 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
 
     function coHideAllStates() {
       ['co-state-paid', 'co-state-expired', 'co-state-cancelled', 'co-state-failed', 'co-state-unavailable'].forEach(id => {
-        document.getElementById(id).hidden = true;
+        const el = document.getElementById(id);
+        el.hidden = true;
+        el.classList.remove('is-entering');
       });
     }
 
-    function coShowUnavailable(message) {
-      coStatus = 'unavailable';
-      if (coTimerInterval) { clearInterval(coTimerInterval); coTimerInterval = null; }
-      coHideAllStates();
-      document.getElementById('co-qr-frame').hidden = true;
-      document.getElementById('co-qr-caption').hidden = true;
-      document.getElementById('co-actions-row').hidden = true;
-      document.getElementById('co-expiry-row').hidden = true;
-      document.getElementById('co-offset-note').hidden = true;
-      document.getElementById('co-pulse-dot').hidden = true;
-      const pill = document.getElementById('co-verification-pill');
-      pill.style.background = '#fef3c7';
-      pill.style.borderColor = '#fde68a';
-      pill.style.color = '#92400e';
-      document.getElementById('co-verification-text').innerText = 'Unavailable';
-      document.getElementById('co-unavailable-reason').innerText = message || 'Merchant is not configured / temporarily unavailable.';
-      document.getElementById('co-state-unavailable').hidden = false;
-    }
-
-    function coRenderStatus(status, utr, failReason) {
-      coStatus = status;
-      coHideAllStates();
-      const qrFrame = document.getElementById('co-qr-frame');
-      const qrCap = document.getElementById('co-qr-caption');
+    function coApplyTerminalChrome(status, failReason) {
+      const qrWrap = document.getElementById('co-qr-wrap');
       const actionsRow = document.getElementById('co-actions-row');
       const expiryRow = document.getElementById('co-expiry-row');
       const offsetNote = document.getElementById('co-offset-note');
       const pulseDot = document.getElementById('co-pulse-dot');
+      const clockDot = document.getElementById('co-clock-dot');
+      const totalRow = document.getElementById('co-total-row');
+      const notPaidChip = document.getElementById('co-not-paid-chip');
+      const pill = document.getElementById('co-verification-pill');
+      const verText = document.getElementById('co-verification-text');
+      const backWrap = document.getElementById('co-merchant-back-wrap');
+      const backBtn = document.getElementById('co-btn-merchant-back');
+
+      if (coTimerInterval) { clearInterval(coTimerInterval); coTimerInterval = null; }
+      qrWrap.hidden = true;
+      qrWrap.classList.remove('is-fading-out');
+      actionsRow.hidden = true;
+      expiryRow.hidden = true;
+      offsetNote.hidden = true;
+      pulseDot.hidden = true;
+      clockDot.hidden = true;
+      totalRow.classList.remove('is-unpaid-terminal');
+      notPaidChip.hidden = true;
+      backWrap.hidden = true;
+
+      coHideAllStates();
+      const oidText = coOrderId || '—';
+
+      if (status === 'paid') {
+        pill.style.background = '#d1fae5';
+        pill.style.borderColor = '#a7f3d0';
+        pill.style.color = '#065f46';
+        verText.innerText = 'Payment Verified';
+        const paidBox = document.getElementById('co-state-paid');
+        paidBox.hidden = false;
+        paidBox.classList.add('is-entering');
+        if (coRedirectUrl && isSafeHttpUrl(coRedirectUrl) && !coRedirectScheduled) {
+          coRedirectScheduled = true;
+          document.getElementById('co-redirect-countdown').hidden = false;
+          setTimeout(() => { window.location.href = coRedirectUrl; }, 3000);
+        }
+      } else {
+        totalRow.classList.add('is-unpaid-terminal');
+        notPaidChip.hidden = false;
+        if (coRedirectUrl && isSafeHttpUrl(coRedirectUrl)) {
+          backBtn.href = coRedirectUrl;
+          backWrap.hidden = false;
+        }
+        if (status === 'expired') {
+          pill.style.background = '#fef3c7';
+          pill.style.borderColor = '#fcd34d';
+          pill.style.color = '#b45309';
+          clockDot.hidden = false;
+          verText.innerText = 'Expired';
+          document.getElementById('co-timer').innerText = '00:00';
+          document.getElementById('co-exp-order-chip').innerText = oidText;
+          const expBox = document.getElementById('co-state-expired');
+          expBox.hidden = false;
+          expBox.classList.add('is-entering');
+        } else if (status === 'cancelled') {
+          pill.style.background = '#f1f5f9';
+          pill.style.borderColor = '#cbd5e1';
+          pill.style.color = '#475569';
+          verText.innerText = 'Cancelled';
+          document.getElementById('co-can-order-chip').innerText = oidText;
+          const canBox = document.getElementById('co-state-cancelled');
+          canBox.hidden = false;
+          canBox.classList.add('is-entering');
+        } else if (status === 'failed') {
+          pill.style.background = '#fee2e2';
+          pill.style.borderColor = '#fecaca';
+          pill.style.color = '#991b1b';
+          verText.innerText = 'Failed';
+          if (failReason) document.getElementById('co-fail-reason').innerText = failReason;
+          document.getElementById('co-fail-order-chip').innerText = oidText;
+          const failBox = document.getElementById('co-state-failed');
+          failBox.hidden = false;
+          failBox.classList.add('is-entering');
+        } else {
+          pill.style.background = '#fef3c7';
+          pill.style.borderColor = '#fde68a';
+          pill.style.color = '#92400e';
+          verText.innerText = 'Unavailable';
+          const unavailBox = document.getElementById('co-state-unavailable');
+          unavailBox.hidden = false;
+          unavailBox.classList.add('is-entering');
+        }
+      }
+    }
+
+    function coShowUnavailable(message) {
+      coStatus = 'unavailable';
+      document.getElementById('co-unavailable-reason').innerText = message || 'Merchant is not configured / temporarily unavailable.';
+      coApplyTerminalChrome('unavailable', message);
+    }
+
+    function coRenderStatus(status, utr, failReason) {
+      const prevStatus = coStatus;
+      coStatus = status;
+      const qrWrap = document.getElementById('co-qr-wrap');
+      const actionsRow = document.getElementById('co-actions-row');
+      const expiryRow = document.getElementById('co-expiry-row');
+      const offsetNote = document.getElementById('co-offset-note');
+      const pulseDot = document.getElementById('co-pulse-dot');
+      const clockDot = document.getElementById('co-clock-dot');
+      const totalRow = document.getElementById('co-total-row');
+      const notPaidChip = document.getElementById('co-not-paid-chip');
       const pill = document.getElementById('co-verification-pill');
       const verText = document.getElementById('co-verification-text');
 
       if (status === 'pending') {
-        qrFrame.hidden = false;
-        qrCap.hidden = false;
+        coHasShownQr = true;
+        coHideAllStates();
+        document.getElementById('co-merchant-back-wrap').hidden = true;
+        qrWrap.hidden = false;
+        qrWrap.classList.remove('is-fading-out');
         actionsRow.hidden = false;
         expiryRow.hidden = false;
         offsetNote.hidden = (offsetNote.dataset.hasOffset !== '1');
         pulseDot.hidden = false;
+        clockDot.hidden = true;
+        totalRow.classList.remove('is-unpaid-terminal');
+        notPaidChip.hidden = true;
         pill.style.background = '#cddbf0';
         pill.style.borderColor = '#b3c7e6';
         pill.style.color = '#1644b8';
@@ -2567,47 +2922,24 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
         return;
       }
 
-      // Terminal states: completely remove Pay Now, Save QR, and Expires In timer
-      if (coTimerInterval) { clearInterval(coTimerInterval); coTimerInterval = null; }
-      qrFrame.hidden = true;
-      qrCap.hidden = true;
-      actionsRow.hidden = true;
-      expiryRow.hidden = true;
-      offsetNote.hidden = true;
-      pulseDot.hidden = true;
-
       if (status === 'paid') {
-        pill.style.background = '#d1fae5';
-        pill.style.borderColor = '#a7f3d0';
-        pill.style.color = '#065f46';
-        verText.innerText = 'Payment Verified';
         document.getElementById('co-paid-utr').innerText = utr || 'Verified';
-        document.getElementById('co-state-paid').hidden = false;
-        if (coRedirectUrl && !coRedirectScheduled) {
-          coRedirectScheduled = true;
-          document.getElementById('co-redirect-countdown').hidden = false;
-          setTimeout(() => { window.location.href = coRedirectUrl; }, 3000);
-        }
-      } else if (status === 'expired') {
-        pill.style.background = '#f1f5f9';
-        pill.style.borderColor = '#cbd5e1';
-        pill.style.color = '#475569';
-        verText.innerText = 'Order Expired';
-        document.getElementById('co-timer').innerText = '00:00';
-        document.getElementById('co-state-expired').hidden = false;
-      } else if (status === 'cancelled') {
-        pill.style.background = '#fef3c7';
-        pill.style.borderColor = '#fde68a';
-        pill.style.color = '#92400e';
-        verText.innerText = 'Order Cancelled';
-        document.getElementById('co-state-cancelled').hidden = false;
-      } else if (status === 'failed') {
-        pill.style.background = '#fee2e2';
-        pill.style.borderColor = '#fecaca';
-        pill.style.color = '#991b1b';
-        verText.innerText = 'Verification Failed';
-        if (failReason) document.getElementById('co-fail-reason').innerText = failReason;
-        document.getElementById('co-state-failed').hidden = false;
+      }
+
+      // If QR was actively displayed, fade & blur it out over 300ms before revealing terminal card
+      if (coHasShownQr && prevStatus === 'pending' && !qrWrap.hidden) {
+        if (coTimerInterval) { clearInterval(coTimerInterval); coTimerInterval = null; }
+        coIsTransitioning = true;
+        qrWrap.classList.add('is-fading-out');
+        if (coTransitionTimer) clearTimeout(coTransitionTimer);
+        coTransitionTimer = setTimeout(() => {
+          coIsTransitioning = false;
+          coApplyTerminalChrome(status, failReason);
+        }, 290);
+      } else if (coIsTransitioning && prevStatus === status) {
+        return;
+      } else if (prevStatus !== status || document.querySelector('#checkout .co-state-box:not([hidden])') === null) {
+        coApplyTerminalChrome(status, failReason);
       }
     }
 
@@ -2654,6 +2986,8 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
 
     async function initCheckoutPage(orderId) {
       coOrderId = orderId;
+      coHasShownQr = false;
+      coStatus = 'pending';
       document.title = `MinorUPI — Checkout ${orderId}`;
       showTopScreen('checkout');
       try {
@@ -2664,7 +2998,7 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
           return;
         }
         const o = data.order;
-        const payStr = Number(o.payable_amount).toFixed(2);
+        const payStr = o.payable_amount_str || Number(o.payable_amount).toFixed(2);
         document.getElementById('co-merchant-name').innerText = o.merchant_name || 'MinorUPI Merchant';
         document.getElementById('co-order-id').innerText = o.order_id;
         document.getElementById('co-amount').innerText = payStr;
@@ -2672,7 +3006,7 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
         document.getElementById('co-qr-img').src = o.qr_base64;
         document.getElementById('co-btn-save-qr').href = `/api/public/qr/${o.order_id}.png`;
         document.getElementById('co-btn-pay-now').href = o.upi_link;
-        coRedirectUrl = o.redirect_url;
+        coRedirectUrl = isSafeHttpUrl(o.redirect_url) ? o.redirect_url : null;
 
         const hasOffset = Math.abs(Number(o.payable_amount) - Number(o.base_amount)) >= 0.005;
         document.getElementById('co-offset-note').dataset.hasOffset = hasOffset ? '1' : '0';
@@ -2690,7 +3024,7 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
     }
 
     /* ========================================================================
-       ADMIN / AUTH SPA API & ROUTING
+       ADMIN / AUTH SPA API & SINGLE-/dashboard ROUTING
        ======================================================================== */
     async function fetchCsrfToken(force = false) {
       if (csrfToken && !force) return csrfToken;
@@ -2729,6 +3063,7 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
         return api(path, method, body, true);
       }
       if (res.status === 401 && path !== '/api/login') {
+        if (window.location.pathname !== '/login') window.history.replaceState({}, '', '/login');
         showTopScreen('login');
         await fetchCsrfToken(true);
       }
@@ -2760,6 +3095,13 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
       }
 
       initTheme();
+      const cookieIntent = readAndClearIntentCookie();
+      if (cookieIntent && tabTitles[cookieIntent]) {
+        safeSetSession('mupi_active_tab', cookieIntent);
+      } else if (path === '/docs') {
+        safeSetSession('mupi_active_tab', 'docs');
+      }
+
       await fetchCsrfToken(true);
       try {
         const res = await fetch('/api/session/state', { credentials: 'same-origin' });
@@ -2771,7 +3113,7 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
         }
         if (!state.logged_in) {
           showTopScreen('login');
-          if (path !== '/login' && path !== '/docs') window.history.replaceState({}, '', '/login');
+          if (path !== '/login') window.history.replaceState({}, '', '/login');
           return;
         }
         await enterLoggedInApp(state.configured);
@@ -2783,6 +3125,8 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
     async function enterLoggedInApp(configuredHint = null) {
       const { data } = await api('/api/me');
       if (!data.logged_in) {
+        const authPath = data.admin_exists ? '/login' : '/setup';
+        if (window.location.pathname !== authPath) window.history.replaceState({}, '', authPath);
         showTopScreen(data.admin_exists ? 'login' : 'setup');
         return;
       }
@@ -2796,13 +3140,21 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
       showTopScreen('app');
       await ensureChartJsLoaded();
 
-      const path = window.location.pathname;
-      if (path === '/docs') switchTab('docs', false);
-      else if (!configured) switchTab('connect', false);
-      else switchTab('dashboard', false);
+      const savedTab = safeGetSession('mupi_active_tab');
+      let initialTab = (savedTab && tabTitles[savedTab]) ? savedTab : (configured ? 'dashboard' : 'connect');
+      if (!tabTitles[initialTab]) initialTab = 'dashboard';
+
+      switchTab(initialTab, 'replace');
 
       if (!appInitialized) {
         appInitialized = true;
+        window.addEventListener('popstate', (event) => {
+          if (document.getElementById('app').hidden) return;
+          const stTab = event.state && event.state.tab;
+          if (stTab && tabTitles[stTab]) {
+            switchTab(stTab, 'none');
+          }
+        });
         setInterval(() => {
           if (document.getElementById('app').hidden) return;
           const activeView = document.querySelector('#app .view:not([hidden])')?.id;
@@ -2811,7 +3163,7 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
           else if (activeView === 'tab-links') { loadPaymentLinks(); }
           else if (activeView === 'tab-transactions') {
             const sub = document.querySelector('#app .subtab-btn.active')?.dataset?.subtab;
-            if (sub === 'orders') loadTransactions();
+            if (sub === 'orders') loadTransactions(txCurrentPage);
             else if (sub === 'verify') loadVerifyLogs();
           }
         }, 10000);
@@ -2840,7 +3192,6 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
         if (data.success) {
           if (data.csrf_token) csrfToken = data.csrf_token;
           showToast('Admin account created!', 'success');
-          window.history.replaceState({}, '', '/dashboard');
           await enterLoggedInApp(false);
         } else {
           alertBox.innerText = data.error?.message || 'Setup failed';
@@ -2872,7 +3223,6 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
           showToast('Signed in to MinorUPI!', 'success');
           const res = await fetch('/api/session/state', { credentials: 'same-origin' });
           const st = await res.json();
-          if (window.location.pathname !== '/docs') window.history.replaceState({}, '', '/dashboard');
           await enterLoggedInApp(st.configured);
         } else {
           alertBox.innerText = data.error?.message || 'Invalid email or password';
@@ -2979,28 +3329,35 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
       transactions: 'Transactions', api: 'API', docs: 'Docs', settings: 'Settings'
     };
 
-    function switchTab(tabId, updateUrl = true) {
+    function switchTab(tabId, historyMode = 'push') {
+      const targetTab = tabTitles[tabId] ? tabId : 'dashboard';
+      const changed = (targetTab !== currentActiveTab);
+      currentActiveTab = targetTab;
+
       document.querySelectorAll('#app .view').forEach(el => { el.hidden = true; });
       document.querySelectorAll('#app .nav-link').forEach(el => el.classList.remove('active'));
-      const target = document.getElementById(`tab-${tabId}`);
+      const target = document.getElementById(`tab-${targetTab}`);
       if (target) target.hidden = false;
-      const link = document.querySelector(`#app .nav-link[data-tab="${tabId}"]`);
+      const link = document.querySelector(`#app .nav-link[data-tab="${targetTab}"]`);
       if (link) link.classList.add('active');
-      document.getElementById('topbar-page-name').innerText = tabTitles[tabId] || 'Dashboard';
+      document.getElementById('topbar-page-name').innerText = tabTitles[targetTab];
+      document.title = `MinorUPI — ${tabTitles[targetTab]}`;
       toggleDrawer(false);
+      safeSetSession('mupi_active_tab', targetTab);
 
-      if (updateUrl) {
-        const nextUrl = tabId === 'docs' ? '/docs' : '/dashboard';
-        if (window.location.pathname !== nextUrl) window.history.replaceState({}, '', nextUrl);
+      if (historyMode === 'replace' || window.location.pathname !== '/dashboard') {
+        window.history.replaceState({ tab: targetTab }, '', '/dashboard');
+      } else if (historyMode === 'push' && changed) {
+        window.history.pushState({ tab: targetTab }, '', '/dashboard');
       }
 
-      if (tabId === 'dashboard') { loadDashboard(); loadConnection(); }
-      else if (tabId === 'connect') loadConnection();
-      else if (tabId === 'links') loadPaymentLinks();
-      else if (tabId === 'transactions') { loadTransactions(); loadVerifyLogs(); loadUnmatched(); }
-      else if (tabId === 'api') { loadApiKeys(); loadWebhookSecret(); loadWebhookLogs(); }
-      else if (tabId === 'docs') loadDocsPrompt();
-      else if (tabId === 'settings') loadSettingsProfile();
+      if (targetTab === 'dashboard') { loadDashboard(); loadConnection(); }
+      else if (targetTab === 'connect') loadConnection();
+      else if (targetTab === 'links') loadPaymentLinks();
+      else if (targetTab === 'transactions') { loadTransactions(txCurrentPage); loadVerifyLogs(); loadUnmatched(); }
+      else if (targetTab === 'api') { loadApiKeys(); loadWebhookSecret(); loadWebhookLogs(); }
+      else if (targetTab === 'docs') loadDocsPrompt();
+      else if (targetTab === 'settings') loadSettingsProfile();
     }
 
     /* ========================================================================
@@ -3148,7 +3505,7 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
         document.getElementById('conn-last-checked').innerText = `Last poll: ${lastAt ? new Date(lastAt).toLocaleString() : 'Never'} (${pollOk ? 'OK' : 'Error'})`;
 
         if (isConn && pollOk) { badge.className = 'badge badge-paid'; badge.innerText = 'Poller Active'; }
-        else if (isConn && !pollOk) { badge.className = 'badge badge-cancelled'; badge.innerText = 'Poll Warning'; }
+        else if (isConn && !pollOk) { badge.className = 'badge badge-expired'; badge.innerText = 'Poll Warning'; }
         else { badge.className = 'badge badge-failed'; badge.innerText = 'Disconnected'; }
 
         errBox.hidden = !data.last_error;
@@ -3297,13 +3654,13 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
     async function cancelOrder(orderId) {
       if (!await showConfirmModal('Cancel Order?', `Cancel ${orderId}?`, 'Cancel Order', true)) return;
       const { data } = await api(`/api/admin/orders/${encodeURIComponent(orderId)}/cancel`, 'POST', {});
-      if (data.success) { showToast('Order cancelled', 'info'); loadPaymentLinks(); loadTransactions(); loadDashboard(); }
+      if (data.success) { showToast('Order cancelled', 'info'); loadPaymentLinks(); loadTransactions(txCurrentPage); loadDashboard(); }
       else showToast(data.error?.message || 'Failed', 'error');
     }
     async function deleteOrder(orderId) {
       if (!await showConfirmModal('Delete Order?', `Permanently delete ${orderId}?`, 'Delete', true)) return;
       const { data } = await api(`/api/admin/orders/${encodeURIComponent(orderId)}`, 'DELETE');
-      if (data.success) { showToast('Order deleted', 'info'); loadPaymentLinks(); loadTransactions(); loadDashboard(); }
+      if (data.success) { showToast('Order deleted', 'info'); loadPaymentLinks(); loadTransactions(txCurrentPage); loadDashboard(); }
     }
 
     /* ========================================================================
@@ -3314,20 +3671,34 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
       ['orders', 'verify', 'unmatched'].forEach(p => {
         document.getElementById(`tx-pane-${p}`).hidden = (p !== subtab);
       });
-      if (subtab === 'orders') loadTransactions();
+      if (subtab === 'orders') loadTransactions(txCurrentPage);
       else if (subtab === 'verify') loadVerifyLogs();
       else if (subtab === 'unmatched') loadUnmatched();
     }
 
-    async function loadTransactions() {
+    document.getElementById('filter-search').addEventListener('input', () => {
+      if (txSearchTimeout) clearTimeout(txSearchTimeout);
+      txSearchTimeout = setTimeout(() => loadTransactions(1), 250);
+    });
+
+    async function loadTransactions(page = 1) {
+      txCurrentPage = Math.max(1, Number(page) || 1);
       const status = document.getElementById('filter-status').value;
-      const { data } = await api(`/api/admin/orders${status ? `?status=${encodeURIComponent(status)}` : ''}`);
+      const search = document.getElementById('filter-search').value.trim();
+      const params = new URLSearchParams();
+      params.set('page', String(txCurrentPage));
+      params.set('limit', '20');
+      if (status) params.set('status', status);
+      if (search) params.set('search', search);
+
+      const { data } = await api(`/api/admin/orders?${params.toString()}`);
       if (data.server_now) {
         const sMs = Date.parse(data.server_now);
         if (!Number.isNaN(sMs)) serverOffsetMs = sMs - Date.now();
       }
       const tbody = document.getElementById('transactions-table-tbody');
       const empty = document.getElementById('transactions-empty-state');
+      const pagBar = document.getElementById('tx-pagination');
       tbody.innerHTML = '';
       const rows = data.orders || [];
       empty.hidden = rows.length > 0;
@@ -3349,8 +3720,37 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
         `;
         tbody.appendChild(tr);
       });
+
+      const total = Number(data.total || 0);
+      const limit = Number(data.limit || 20);
+      const totalPages = Math.max(1, Math.ceil(total / limit));
+      if (total > 0) {
+        pagBar.hidden = false;
+        document.getElementById('tx-page-info').innerText = `Page ${txCurrentPage} of ${totalPages} (${total} orders)`;
+        document.getElementById('tx-prev-btn').disabled = (txCurrentPage <= 1);
+        document.getElementById('tx-next-btn').disabled = (txCurrentPage >= totalPages);
+      } else {
+        pagBar.hidden = true;
+      }
     }
-    function exportTransactionsCSV() { window.location.href = '/api/admin/orders/export'; }
+
+    async function exportTransactionsCSV() {
+      try {
+        const res = await fetch('/api/admin/orders/export', { credentials: 'same-origin' });
+        if (!res.ok) { showToast('Export failed', 'error'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `minorupi-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (e) {
+        showToast('Export failed', 'error');
+      }
+    }
 
     async function loadVerifyLogs() {
       const { data } = await api('/api/admin/verify-logs');
@@ -3537,6 +3937,7 @@ valid = hmac.compare_digest(expected, request.headers.get("X-Signature", ""))</p
       toggleDrawer(false);
       const { data } = await api('/api/logout', 'POST', {});
       if (data?.csrf_token) csrfToken = data.csrf_token;
+      safeSetSession('mupi_active_tab', null);
       window.history.replaceState({}, '', '/login');
       showTopScreen('login');
       await fetchCsrfToken(true);

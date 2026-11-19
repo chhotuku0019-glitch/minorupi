@@ -45,7 +45,9 @@ PORT = int(os.environ.get("PORT", 3000))
 HOST = "0.0.0.0"
 BASE_URL = os.environ.get("APP_URL", "").rstrip("/")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_FILE = os.path.join(BASE_DIR, "gateway.db")
+# Note: On hosts with ephemeral filesystems (such as Render free instances), mount a
+# Persistent Disk and set DATABASE_PATH (e.g. /var/data/gateway.db) or data resets on redeploy.
+DB_FILE = os.environ.get("DATABASE_PATH", "").strip() or os.path.join(BASE_DIR, "gateway.db")
 
 ALLOWED_EMAIL_DOMAINS = ["famapp.in", "fam.community"]
 AMOUNT_CONFLICT_MODE = "offset"  # "offset" (+0.01..+0.20 on simultaneous pending conflict) or "reject" (HTTP 409 AMOUNT_BUSY)
@@ -192,13 +194,16 @@ def parse_fam_ist_date_utc(date_str: str):
 def get_db():
     conn = sqlite3.connect(DB_FILE, timeout=15.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA busy_timeout=5000;")
     return conn
 
 def init_db():
     global FERNET_KEY, WEBHOOK_SECRET, _fernet_instance
+    db_parent = os.path.dirname(os.path.abspath(DB_FILE))
+    if db_parent:
+        os.makedirs(db_parent, exist_ok=True)
     with get_db() as db:
+        db.execute("PRAGMA journal_mode=WAL;")
         db.execute("""
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
@@ -626,7 +631,7 @@ def generate_upi_payment_data(order_id: str, payable_amount):
         "am": f"{amt_dec:.2f}",
         "cu": "INR",
         "tn": order_id
-    })
+    }, quote_via=urllib.parse.quote)
     upi_link = f"upi://pay?{query}"
 
     qr = qrcode.QRCode(
@@ -1151,11 +1156,13 @@ def _process_imap_folder(mail, folder_name: str, is_inbox: bool, pre_baseline_ms
 
 def poll_gmail_imap():
     with get_db() as db:
-        pending_count = db.execute("SELECT COUNT(*) as c FROM orders WHERE status = 'pending'").fetchone()["c"]
-        if pending_count == 0:
-            return
         conn_row = db.execute("SELECT * FROM connection WHERE id = 1").fetchone()
         if not conn_row or conn_row["status"] != "connected":
+            return
+        pending_count = db.execute("SELECT COUNT(*) as c FROM orders WHERE status = 'pending'").fetchone()["c"]
+        if pending_count == 0:
+            db.execute("UPDATE connection SET last_poll_at = ? WHERE id = 1", (iso_now(),))
+            db.commit()
             return
         gmail = conn_row["gmail"]
         app_password = decrypt_secret(conn_row["encrypted_app_password"])
@@ -1447,15 +1454,89 @@ def generate_ai_prompt_text(stack: str = "python", api_key: str = None, webhook_
 """.strip()
 
 # ==============================================================================
-# SINGLE HTML ENTRYPOINT ROUTING
+# SINGLE HTML ENTRYPOINT & PART 1 SERVER ROUTING (/dashboard SINGLE URL)
 # ==============================================================================
+def _get_auth_state():
+    with get_db() as db:
+        has_admin = bool(db.execute("SELECT id FROM admin LIMIT 1").fetchone())
+        logged_in = False
+        if "admin_id" in session:
+            logged_in = bool(db.execute("SELECT id FROM admin WHERE id = ?", (session["admin_id"],)).fetchone())
+    return has_admin, logged_in
+
+def _is_https_req():
+    fwd_proto = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip().lower()
+    return bool(request.is_secure or fwd_proto == "https")
+
+def _safe_http_url(raw_val):
+    val = (raw_val or "").strip()
+    if not val:
+        return None
+    parsed = urllib.parse.urlparse(val)
+    if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc:
+        raise ValueError("URL must start with http:// or https://")
+    return val
+
+def _safe_int_param(name: str, default: int, minimum: int = 1, maximum: int = 1000000) -> int:
+    try:
+        val = int(request.args.get(name, default))
+    except (TypeError, ValueError):
+        val = default
+    return max(minimum, min(maximum, val))
+
 @app.route("/")
+def route_root():
+    has_admin, logged_in = _get_auth_state()
+    if not has_admin:
+        return redirect("/setup")
+    if not logged_in:
+        return redirect("/login")
+    return redirect("/dashboard")
+
 @app.route("/setup")
+def route_setup():
+    has_admin, logged_in = _get_auth_state()
+    if has_admin:
+        return redirect("/dashboard" if logged_in else "/login")
+    return send_file(os.path.join(BASE_DIR, "index.html"))
+
 @app.route("/login")
-@app.route("/dashboard")
+def route_login():
+    has_admin, logged_in = _get_auth_state()
+    if not has_admin:
+        return redirect("/setup")
+    if logged_in:
+        return redirect("/dashboard")
+    return send_file(os.path.join(BASE_DIR, "index.html"))
+
 @app.route("/docs")
+def route_docs():
+    has_admin, logged_in = _get_auth_state()
+    target = "/setup" if not has_admin else ("/dashboard" if logged_in else "/login")
+    resp = redirect(target)
+    is_https = _is_https_req()
+    resp.set_cookie(
+        "mupi_intent_tab",
+        "docs",
+        max_age=180,
+        httponly=False,
+        secure=is_https,
+        samesite="None" if is_https else "Lax",
+        path="/"
+    )
+    return resp
+
+@app.route("/dashboard")
+def route_dashboard():
+    has_admin, logged_in = _get_auth_state()
+    if not has_admin:
+        return redirect("/setup")
+    if not logged_in:
+        return redirect("/login")
+    return send_file(os.path.join(BASE_DIR, "index.html"))
+
 @app.route("/pay/<order_id>")
-def route_single_html(order_id=None):
+def route_checkout(order_id=None):
     return send_file(os.path.join(BASE_DIR, "index.html"))
 
 @app.route("/ai-prompt.txt")
@@ -1671,10 +1752,21 @@ def api_v1_create_order():
         expiry_minutes = API_DEFAULT_EXPIRY_MINUTES
 
     custom_id = data.get("order_id")
-    callback_url = (data.get("callback_url") or "").strip() or None
-    redirect_url = (data.get("redirect_url") or "").strip() or None
-    note = (data.get("note") or "").strip() or None
+    if custom_id is not None:
+        custom_id = str(custom_id).strip()
+        if custom_id and not re.match(r"^[A-Za-z0-9._-]{3,64}$", custom_id):
+            return jsonify({
+                "success": False,
+                "error": {"code": "INVALID_PARAM", "message": "order_id must be 3-64 characters of letters, numbers, '.', '_', or '-'"}
+            }), 400
 
+    try:
+        callback_url = _safe_http_url(data.get("callback_url"))
+        redirect_url = _safe_http_url(data.get("redirect_url"))
+    except ValueError as e:
+        return jsonify({"success": False, "error": {"code": "INVALID_PARAM", "message": str(e)}}), 400
+
+    note = (data.get("note") or "").strip() or None
     order_id = custom_id if custom_id else f"ORD-{secrets.token_hex(4).upper()}"
     baseline_uid = fetch_connection_baseline_uid()
     now_dt = datetime.now(timezone.utc)
@@ -1783,8 +1875,8 @@ def api_v1_list_orders():
 
     check_order_expiries()
     status_filter = request.args.get("status")
-    page = max(1, int(request.args.get("page", 1)))
-    limit = min(100, max(1, int(request.args.get("limit", 20))))
+    page = _safe_int_param("page", 1, minimum=1, maximum=100000)
+    limit = _safe_int_param("limit", 20, minimum=1, maximum=100)
     offset = (page - 1) * limit
 
     with get_db() as db:
@@ -2231,8 +2323,8 @@ def api_admin_get_orders():
     status = request.args.get("status")
     source = request.args.get("source")
     search = request.args.get("search", "").strip()
-    page = max(1, int(request.args.get("page", 1)))
-    limit = max(1, min(100, int(request.args.get("limit", 20))))
+    page = _safe_int_param("page", 1, minimum=1, maximum=100000)
+    limit = _safe_int_param("limit", 20, minimum=1, maximum=100)
     offset = (page - 1) * limit
 
     query = "SELECT * FROM orders WHERE 1=1"
@@ -2288,7 +2380,10 @@ def api_admin_create_payment_link():
         expiry_minutes = 10
 
     note = (data.get("note") or "").strip() or None
-    redirect_url = (data.get("redirect_url") or "").strip() or None
+    try:
+        redirect_url = _safe_http_url(data.get("redirect_url"))
+    except ValueError as e:
+        return jsonify({"success": False, "error": {"code": "INVALID_URL", "message": str(e)}}), 400
 
     order_id = f"PL-{secrets.token_hex(4).upper()}"
     baseline_uid = fetch_connection_baseline_uid()
